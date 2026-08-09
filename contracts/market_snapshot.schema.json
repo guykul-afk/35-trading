@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TA35 Lite EOD Snapshot",
+  "type": "object",
+  "required": ["schema_version", "run_id", "source", "source_timestamp", "received_timestamp", "market_data_type", "bars"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "source": {"type": "string", "minLength": 1},
+    "source_timestamp": {"type": "string", "format": "date-time"},
+    "received_timestamp": {"type": "string", "format": "date-time"},
+    "market_data_type": {"enum": ["eod", "demo"]},
+    "bars": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["symbol", "session_date", "close", "source", "quality_flags"],
+        "properties": {
+          "symbol": {"type": "string"}, "session_date": {"type": "string", "format": "date"},
+          "open": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "high": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "low": {"type": ["number", "null"], "exclusiveMinimum": 0},
+          "close": {"type": "number", "exclusiveMinimum": 0},
+          "source": {"type": "string"}, "quality_flags": {"type": "array", "items": {"type": "string"}}
+        }, "additionalProperties": false
+      }
+    }
+  }, "additionalProperties": false
+}

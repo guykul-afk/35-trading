@@ -1,0 +1,15 @@
+Save the downloaded files in this folder with these names:
+
+- ta35.csv
+- vta35.csv
+- usdils.csv (optional)
+
+Then run the PowerShell command from the project folder:
+
+py scripts/import_public_data.py --ta35 downloads/ta35.csv --vta35 downloads/vta35.csv --usdils downloads/usdils.csv --cboe
+
+If usdils.csv is not present, omit: --usdils downloads/usdils.csv
+
+Alternatively, open the main dashboard, expand "עדכון נתוני ת״א־35 מהבורסה",
+download the official TASE exports and upload them there. The dashboard accepts
+the original filenames and validates the files before updating the database.
