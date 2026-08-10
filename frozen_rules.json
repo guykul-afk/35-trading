@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "status": "disabled_pending_validation",
+  "source_commit": "bd85b07378f8e6fa38df687b771e2578d0c68e45",
+  "evaluation_start": null,
+  "rules": [],
+  "note": "Populate only before a forward-only evaluation; historical selection must not modify a frozen rule."
+}

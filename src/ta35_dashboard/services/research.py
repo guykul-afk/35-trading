@@ -56,20 +56,27 @@ def _normal_sf(value: float) -> float:
     return 0.5 * math.erfc(value / math.sqrt(2))
 
 
-def _proportion_pvalue(hits: int, observations: int, baseline: float) -> float | None:
-    """One-sided score-test p-value for improvement over a declared baseline."""
+def _proportion_pvalue(
+    hits: int, observations: int, baseline: float, *, horizon: int = 1
+) -> float | None:
+    """Conservative one-sided test using the non-overlapping effective n."""
 
     if observations <= 0 or not 0 < baseline < 1:
         return None
     rate = hits / observations
-    standard_error = math.sqrt(baseline * (1 - baseline) / observations)
+    effective_n = max(1, observations // max(1, horizon))
+    standard_error = math.sqrt(baseline * (1 - baseline) / effective_n)
     if standard_error == 0:
         return None
     return min(1.0, max(0.0, _normal_sf((rate - baseline) / standard_error)))
 
 
 def _bh_adjust(values: pd.Series) -> pd.Series:
-    """Benjamini-Hochberg false-discovery-rate adjustment."""
+    """Holm adjustment, valid under arbitrary dependence.
+
+    The function name is retained for report-schema compatibility; the values
+    are conservative family-wise adjusted p-values, not BH FDR estimates.
+    """
 
     result = pd.Series(np.nan, index=values.index, dtype=float)
     valid = values.dropna().sort_values()
@@ -77,10 +84,10 @@ def _bh_adjust(values: pd.Series) -> pd.Series:
         return result
     count = len(valid)
     adjusted = np.empty(count, dtype=float)
-    running = 1.0
+    running = 0.0
     raw = valid.to_numpy(dtype=float)
-    for index in range(count - 1, -1, -1):
-        running = min(running, raw[index] * count / (index + 1))
+    for index in range(count):
+        running = max(running, raw[index] * (count - index))
         adjusted[index] = min(1.0, running)
     result.loc[valid.index] = adjusted
     return result
@@ -124,11 +131,11 @@ def _walk_forward_brier(group: pd.DataFrame, baseline: float, horizon: int) -> f
     return float(np.mean((np.asarray(probabilities) - np.asarray(outcomes)) ** 2))
 
 
-def _nonoverlap_rate(group: pd.DataFrame, horizon: int) -> tuple[int, float | None]:
+def _nonoverlap_rate(
+    group: pd.DataFrame, horizon: int
+) -> tuple[int, float | None, float | None, float | None]:
     if group.empty:
-        return 0, None
-    # Average every possible offset rather than letting one arbitrary start date
-    # determine the robustness check.
+        return 0, None, None, None
     rates: list[float] = []
     sizes: list[int] = []
     positions = group["position"].astype(int)
@@ -137,7 +144,12 @@ def _nonoverlap_rate(group: pd.DataFrame, horizon: int) -> tuple[int, float | No
         if len(sample):
             rates.append(float(sample["hit"].mean()))
             sizes.append(len(sample))
-    return (min(sizes) if sizes else 0), (float(np.mean(rates)) if rates else None)
+    return (
+        min(sizes) if sizes else 0,
+        float(np.min(rates)) if rates else None,
+        float(np.median(rates)) if rates else None,
+        float(np.max(rates)) if rates else None,
+    )
 
 
 def _indicator_records(
@@ -203,17 +215,25 @@ def _indicator_records(
                             "value": value,
                             "continuous_outcome": continuous,
                             "regime": str(row.get("regime", "לא זמין")),
+                            "rv_level_bucket": row.get("rv_level_bucket", "unknown"),
                         }
                     )
     return pd.DataFrame(records)
 
 
 def _marginal_baseline(group: pd.DataFrame) -> float:
-    actual_rates = group["actual"].value_counts(normalize=True)
-    prediction_rates = group["predicted"].value_counts(normalize=True)
-    return float(
-        sum(prediction_rates.get(value, 0.0) * actual_rates.get(value, 0.0) for value in (-1, 0, 1))
-    )
+    """Class-marginal baseline conditioned on the current RV-level bucket."""
+
+    weighted = 0.0
+    for _, sample in group.groupby("rv_level_bucket", dropna=False):
+        actual_rates = sample["actual"].value_counts(normalize=True)
+        prediction_rates = sample["predicted"].value_counts(normalize=True)
+        bucket_rate = sum(
+            prediction_rates.get(value, 0.0) * actual_rates.get(value, 0.0)
+            for value in (-1, 0, 1)
+        )
+        weighted += len(sample) / len(group) * bucket_rate
+    return float(weighted)
 
 
 def _indicator_tables(records: pd.DataFrame) -> dict[str, pd.DataFrame]:
@@ -231,7 +251,9 @@ def _indicator_tables(records: pd.DataFrame) -> dict[str, pd.DataFrame]:
         observations = len(group)
         accuracy = hits / observations
         low, high = _wilson(hits, observations)
-        nonoverlap_n, nonoverlap_rate = _nonoverlap_rate(group, int(horizon))
+        nonoverlap_n, nonoverlap_min, nonoverlap_median, nonoverlap_max = (
+            _nonoverlap_rate(group, int(horizon))
+        )
         signal_rank = group["value"].rank(pct=True) - 0.5
         signal_score = group["predicted"] * signal_rank.abs()
         ic = _spearman(signal_score, group["continuous_outcome"])
@@ -267,12 +289,17 @@ def _indicator_tables(records: pd.DataFrame) -> dict[str, pd.DataFrame]:
                 "adjusted_accuracy": adjusted,
                 "ci_low": low,
                 "ci_high": high,
-                "p_value": _proportion_pvalue(hits, observations, baseline),
+                "p_value": _proportion_pvalue(
+                    hits, observations, baseline, horizon=int(horizon)
+                ),
                 "strength": score,
                 "brier_walk_forward": _walk_forward_brier(group, baseline, int(horizon)),
                 "brier_baseline": baseline * (1 - baseline),
                 "nonoverlap_n_min": nonoverlap_n,
-                "nonoverlap_accuracy": nonoverlap_rate,
+                "n_eff": observations // int(horizon),
+                "nonoverlap_accuracy_min": nonoverlap_min,
+                "nonoverlap_accuracy": nonoverlap_median,
+                "nonoverlap_accuracy_max": nonoverlap_max,
                 "rank_ic": ic,
                 "top_bottom_quintile_spread": quintile_spread,
                 "positive_years": sum(value > 0 for value in yearly),
@@ -323,7 +350,9 @@ def _indicator_tables(records: pd.DataFrame) -> dict[str, pd.DataFrame]:
         baseline = float((parent["actual"] == predicted).mean())
         low, high = _wilson(hits, observations)
         score, adjusted = _score(hits, observations, baseline=baseline)
-        nonoverlap_n, nonoverlap_rate = _nonoverlap_rate(group, int(horizon))
+        nonoverlap_n, nonoverlap_min, nonoverlap_median, nonoverlap_max = (
+            _nonoverlap_rate(group, int(horizon))
+        )
         arrow_rows.append(
             {
                 "indicator": indicator,
@@ -338,10 +367,15 @@ def _indicator_tables(records: pd.DataFrame) -> dict[str, pd.DataFrame]:
                 "adjusted_hit_rate": adjusted,
                 "ci_low": low,
                 "ci_high": high,
-                "p_value": _proportion_pvalue(hits, observations, baseline),
+                "p_value": _proportion_pvalue(
+                    hits, observations, baseline, horizon=int(horizon)
+                ),
                 "strength": score,
                 "nonoverlap_n_min": nonoverlap_n,
-                "nonoverlap_hit_rate": nonoverlap_rate,
+                "n_eff": observations // int(horizon),
+                "nonoverlap_hit_rate_min": nonoverlap_min,
+                "nonoverlap_hit_rate": nonoverlap_median,
+                "nonoverlap_hit_rate_max": nonoverlap_max,
                 "sample_quality": _quality(observations),
             }
         )
@@ -438,6 +472,7 @@ def _strategy_records(
                 volatility_score=float(row["volatility_direction_score"]),
                 regime=str(row["regime"]),
                 horizon_days=horizon,
+                premium_sale_eligible=True,
             )
             selected_name = recommendation.primary.name if recommendation.primary else None
             for name in STRATEGY_NAMES:
@@ -507,10 +542,10 @@ def _strategy_tables(
             strength, adjusted = 1, None
         else:
             strength, adjusted = _score(successes, observations, baseline=baseline)
-        nonoverlap_n, nonoverlap_rate = (
+        nonoverlap_n, nonoverlap_min, nonoverlap_median, nonoverlap_max = (
             _nonoverlap_rate(selected.rename(columns={"success": "hit"}), int(horizon))
             if observations
-            else (0, None)
+            else (0, None, None, None)
         )
         yearly_lifts: list[float] = []
         regime_lifts: list[float] = []
@@ -551,7 +586,9 @@ def _strategy_tables(
                 "ci_low": low,
                 "ci_high": high,
                 "p_value": (
-                    _proportion_pvalue(successes, observations, baseline)
+                    _proportion_pvalue(
+                        successes, observations, baseline, horizon=int(horizon)
+                    )
                     if baseline is not None
                     else None
                 ),
@@ -563,7 +600,10 @@ def _strategy_tables(
                     float(selected["normalized_move"].median()) if observations else None
                 ),
                 "nonoverlap_n_min": nonoverlap_n,
-                "nonoverlap_success_rate": nonoverlap_rate,
+                "n_eff": observations // int(horizon),
+                "nonoverlap_success_rate_min": nonoverlap_min,
+                "nonoverlap_success_rate": nonoverlap_median,
+                "nonoverlap_success_rate_max": nonoverlap_max,
                 "positive_years": sum(value > 0 for value in yearly_lifts),
                 "tested_years": len(yearly_lifts),
                 "positive_regimes": sum(value > 0 for value in regime_lifts),
@@ -640,6 +680,86 @@ def _forecast_table(frame: pd.DataFrame, horizons: tuple[int, ...]) -> pd.DataFr
     return pd.DataFrame(rows)
 
 
+def _har_rv_benchmark(frame: pd.DataFrame, horizons: tuple[int, ...]) -> pd.DataFrame:
+    """Expanding HAR-RV benchmark and incremental VTA35 ablation.
+
+    At position t the fit ends at t-h, so every training target has fully
+    matured. Evaluation uses one fixed non-overlapping offset per horizon.
+    """
+
+    daily_rv = np.log(frame["close"].astype(float)).diff().abs() * math.sqrt(252)
+    features = pd.DataFrame(
+        {
+            "const": 1.0,
+            "rv_daily": daily_rv,
+            "rv_weekly": daily_rv.rolling(5).mean(),
+            "rv_monthly": daily_rv.rolling(22).mean(),
+            "vta35": frame["vta35"].astype(float) / 100,
+        },
+        index=frame.index,
+    )
+    rows: list[dict[str, object]] = []
+    for horizon in horizons:
+        target = _outcomes(frame, horizon)["forward_rv"]
+        predictions: list[dict[str, float]] = []
+        for position in range(120 + horizon, len(frame) - horizon):
+            if position % horizon != 0:
+                continue
+            train_end = position - horizon
+            train = features.iloc[: train_end + 1].copy()
+            train["target"] = target.iloc[: train_end + 1]
+            train = train.replace([np.inf, -np.inf], np.nan).dropna()
+            current = features.iloc[position]
+            actual = target.iloc[position]
+            if len(train) < 80 or not _finite(actual):
+                continue
+            base_columns = ["const", "rv_daily", "rv_weekly", "rv_monthly"]
+            if current[base_columns + ["vta35"]].isna().any():
+                continue
+            base_beta = np.linalg.lstsq(
+                train[base_columns].to_numpy(), train["target"].to_numpy(), rcond=None
+            )[0]
+            augmented_columns = [*base_columns, "vta35"]
+            augmented_beta = np.linalg.lstsq(
+                train[augmented_columns].to_numpy(),
+                train["target"].to_numpy(),
+                rcond=None,
+            )[0]
+            predictions.append(
+                {
+                    "actual": float(actual),
+                    "har": float(current[base_columns].to_numpy() @ base_beta),
+                    "har_vta35": float(
+                        current[augmented_columns].to_numpy() @ augmented_beta
+                    ),
+                    "rv_20": float(frame["rv_20"].iloc[position]),
+                }
+            )
+        sample = pd.DataFrame(predictions)
+        if sample.empty:
+            rows.append({"horizon": horizon, "n_eff": 0})
+            continue
+        actual_direction = np.sign(sample["actual"] - sample["rv_20"])
+        har_direction = np.sign(sample["har"] - sample["rv_20"])
+        augmented_direction = np.sign(sample["har_vta35"] - sample["rv_20"])
+        har_accuracy = float((har_direction == actual_direction).mean())
+        augmented_accuracy = float((augmented_direction == actual_direction).mean())
+        rows.append(
+            {
+                "horizon": horizon,
+                "n_eff": len(sample),
+                "har_mae": float((sample["har"] - sample["actual"]).abs().mean()),
+                "har_vta35_mae": float(
+                    (sample["har_vta35"] - sample["actual"]).abs().mean()
+                ),
+                "har_direction_accuracy": har_accuracy,
+                "har_vta35_direction_accuracy": augmented_accuracy,
+                "vta35_incremental_accuracy": augmented_accuracy - har_accuracy,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def _recommendation_findings(tables: dict[str, pd.DataFrame]) -> tuple[str, ...]:
     findings: list[str] = []
     indicators = tables["indicator_aggregate"]
@@ -682,27 +802,10 @@ def _recommendation_findings(tables: dict[str, pd.DataFrame]) -> tuple[str, ...]
 
 
 def _knowledge_ranking(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Publish research diagnostics without granting deployment authority."""
     rows: list[dict[str, object]] = []
     indicators = tables["indicator_aggregate"]
     for row in indicators.itertuples(index=False):
-        robust = (
-            row.n >= 80
-            and row.lift > 0
-            and _finite(row.fdr_q)
-            and row.fdr_q <= 0.05
-            and row.positive_years >= 3
-            and row.positive_regimes >= 3
-            and _finite(row.nonoverlap_accuracy)
-            and row.nonoverlap_accuracy > row.baseline
-        )
-        candidate = (
-            row.n >= 40
-            and row.lift > 0
-            and _finite(row.fdr_q)
-            and row.fdr_q <= 0.10
-            and row.positive_years >= 2
-        )
-        tier = "A — recommendation input" if robust else "B — supporting input" if candidate else "C — context only"
         rows.append(
             {
                 "kind": "indicator",
@@ -714,29 +817,11 @@ def _knowledge_ranking(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
                 "fdr_q": row.fdr_q,
                 "year_stability": f"{row.positive_years}/{row.tested_years}",
                 "regime_stability": f"{row.positive_regimes}/{row.tested_regimes}",
-                "tier": tier,
+                "tier": "C — context only (validation freeze)",
             }
         )
     strategies = tables["strategy_summary"]
     for row in strategies.itertuples(index=False):
-        robust = (
-            row.selected_n >= 80
-            and _finite(row.uplift)
-            and row.uplift > 0
-            and _finite(row.fdr_q)
-            and row.fdr_q <= 0.05
-            and row.positive_years >= 3
-            and row.positive_regimes >= 3
-        )
-        candidate = (
-            row.selected_n >= 40
-            and _finite(row.uplift)
-            and row.uplift > 0
-            and _finite(row.fdr_q)
-            and row.fdr_q <= 0.10
-            and row.positive_years >= 2
-        )
-        tier = "A — recommendation rule" if robust else "B — conditional candidate" if candidate else "C — exploratory / unavailable"
         rows.append(
             {
                 "kind": "strategy_proxy",
@@ -748,7 +833,7 @@ def _knowledge_ranking(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
                 "fdr_q": row.fdr_q,
                 "year_stability": f"{row.positive_years}/{row.tested_years}",
                 "regime_stability": f"{row.positive_regimes}/{row.tested_regimes}",
-                "tier": tier,
+                "tier": "C — context only (validation freeze)",
             }
         )
     return pd.DataFrame(rows).sort_values(
@@ -886,6 +971,7 @@ def run_research_backtest(
             ]
         ),
         "forecast_calibration": _forecast_table(frame, horizons),
+        "har_rv_benchmark": _har_rv_benchmark(frame, horizons),
         **_indicator_tables(indicator_records),
         **_strategy_tables(strategy_records, sensitivity),
         "context_ablation_oos": _context_ablation(frame, horizons),
@@ -901,12 +987,12 @@ def run_research_backtest(
         warnings=(
             "All features are computed as-of date t; outcomes begin after that close.",
             "Overlapping horizons create serial dependence; non-overlapping robustness columns are reported.",
-            "P-values are one-sided score approximations and FDR q-values control the many-test discovery rate.",
+            "P-values use the conservative non-overlapping n=floor(n/h), with Holm family-wise adjustment under arbitrary dependence; they remain diagnostics, not deployment gates.",
             "Strategy results are market-scenario proxies, not option P&L; premiums, skew, spreads and slippage are unavailable.",
             "Calendar/Diagonal is untestable without historical IV for at least two expiries.",
             "The 738-day TA-35 sample spans only about three years; regime and annual results can be fragile.",
             "forecast_rv_3d and expected_move_3d_points emit the same direction rule, so their similar results are duplicate evidence rather than independent confirmation.",
-            "Cross-market EOD alignment assumes the recommendation is generated only after every same-date source has published; the database has dates, not intraday publication timestamps.",
+            "US series are made available on the following calendar day before as-of alignment, preserving Friday data for Sunday and preventing same-date Mon-Thu look-ahead.",
             "The current rule thresholds were not frozen before this historical sample. Treat discoveries as in-sample research and require a future frozen holdout before automatic deployment.",
         ),
     )
@@ -947,6 +1033,7 @@ TABLE_TITLES = {
     "knowledge_ranking": "Recommendation knowledge tiers and deployment gates",
     "data_coverage": "Data coverage",
     "forecast_calibration": "Forecast calibration and probability-band coverage",
+    "har_rv_benchmark": "Expanding HAR-RV benchmark and incremental VTA35 value",
     "indicator_aggregate": "Indicator aggregate direction tests",
     "indicator_by_arrow": "Indicator results for every emitted arrow",
     "indicator_intensity": "Indicator intensity / threshold sensitivity",
@@ -981,13 +1068,13 @@ This document is a research knowledge base for recommendation calibration. It te
 
 - Strict as-of feature construction: a signal on session t uses only data available through t.
 - Outcomes: TA-35 close-to-close return and forward realized volatility over 3/7/14/30 sessions.
-- Direction tests: accuracy, class-marginal baseline, lift, Wilson 95% interval, shrunken 1–10 strength, one-sided p-value and Benjamini-Hochberg FDR q-value.
+- Direction tests: accuracy, RV-level-conditioned class-marginal baseline, lift, Wilson 95% interval and a conservative one-sided p-value using floor(n/h).
 - Calibration tests: delayed walk-forward Brier score, so a label enters the historical score only after its horizon has elapsed.
-- Robustness: non-overlapping samples, calendar years, dashboard regimes and signal-intensity subsets.
+- Robustness: min/median/max across every non-overlapping offset, calendar years, dashboard regimes and signal-intensity subsets.
 - Continuous tests: rank information coefficient and top-versus-bottom quintile outcome spread.
 - Volatility forecast tests: bias, MAE, RMSE, realized-volatility rank IC and empirical ±0.5/1/1.5/2σ coverage.
 - Strategy tests: scenario success when selected, empirical unconditional scenario frequency, recommendation uplift, sensitivity to forecast-band width, and year/regime stability.
-- Strength scores are shrinkage-based and sample-size penalized. Statistical significance and economic usefulness are shown separately.
+- Legacy strength scores remain in raw research tables only for compatibility and are disabled in the product UI and deployment logic.
 """
     limitations = "\n".join(f"- {warning}" for warning in report.warnings)
     sections = [header, findings, methods, "\n## Limitations\n", limitations]

@@ -138,16 +138,19 @@ class SQLiteRepository:
         self.initialize()
         with self._connect() as connection:
             rows = connection.execute(
-                """SELECT eod_bars.* FROM eod_bars
-                   JOIN lite_runs USING (run_id)
-                   WHERE symbol = ?
-                   ORDER BY session_date DESC, received_timestamp DESC""",
-                (symbol,),
+                """WITH ranked AS (
+                       SELECT eod_bars.*,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY session_date
+                                  ORDER BY received_timestamp DESC
+                              ) AS recency_rank
+                       FROM eod_bars JOIN lite_runs USING (run_id)
+                       WHERE symbol = ?
+                   )
+                   SELECT * FROM ranked WHERE recency_rank = 1
+                   ORDER BY session_date DESC LIMIT ?""",
+                (symbol, limit),
             ).fetchall()
-        unique = {}
-        for row in rows:
-            unique.setdefault(row["session_date"], row)
-        rows = list(unique.values())[:limit]
         rows.reverse()
         return [
             DailyBar(

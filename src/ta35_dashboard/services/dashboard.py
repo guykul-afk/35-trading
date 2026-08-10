@@ -342,15 +342,9 @@ def load_dashboard_bundle(
         if candidates is not None and not candidates.empty
         else None
     )
-    eligible = bool(
-        best is not None
-        and best["selected_n"] >= 80
-        and best["uplift"] > 0
-        and best["fdr_q"] <= 0.05
-        and best["nonoverlap_n_min"] >= 20
-        and best["nonoverlap_success_rate"] > best["unconditional_baseline"]
-        and best["positive_regimes"] >= 2
-    )
+    # Safety freeze: scenario hit-rate is not option P&L and the historical
+    # validation is being rebuilt. No result may open the live premium gate.
+    eligible = False
     def finite_float(value: object) -> float | None:
         try:
             parsed = float(value)
@@ -367,7 +361,7 @@ def load_dashboard_bundle(
         positive_regimes=int(best["positive_regimes"]) if best is not None else 0,
         tested_regimes=int(best["tested_regimes"]) if best is not None else 0,
         eligible=eligible,
-        status="זכאי למכירת פרמיה" if eligible else "חסום — ראיות לא מספיקות",
+        status="חסום ידנית — המחקר הוא context only",
     )
     cards_list: list[MetricCard] = []
     for key, label, fmt, help_text in CARD_DEFINITIONS:

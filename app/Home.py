@@ -103,16 +103,16 @@ strategy_left.metric(
 strategy_middle.metric("אופק מוצע", f"{recommendation.horizon_days} ימי מסחר")
 strategy_right.metric("תמחור תנודתיות", recommendation.pricing_view)
 strategy_test.metric(
-    "עוצמת תרחיש ב־backtest",
-    f"{strategy_history.strength}/10" if strategy_history else "לא זמין",
+    "סטטוס ולידציה",
+    "Context only",
     delta=(
         f"{strategy_history.observations} מקרים"
         if strategy_history and strategy_history.observations
         else "אין מדגם"
     ),
     help=(
-        "מדד מכווץ של הצלחת תרחיש השוק שהמבנה מחפש. "
-        "זהו proxy ולא תשואת אופציות, משום שאין במסד שרשרת אופציות היסטורית."
+        "ציוני העוצמה מושבתים. שיעור הצלחת תרחיש אינו תשואת אופציות, "
+        "ולכן אינו משמש כעת להחלטה או לפתיחת שער."
     ),
 )
 if recommendation.primary:
@@ -221,7 +221,7 @@ with st.expander("עדכון נתוני ת״א־35 מהבורסה", expanded=Fal
                 st.success(f"הנתונים עודכנו בהצלחה. {details}")
                 st.rerun()
 
-st.subheader("אינדיקטורים ועוצמת הסיגנל")
+st.subheader("אינדיקטורים — הקשר מחקרי בלבד")
 strength_horizon = int(
     st.radio(
         "אופק מדדי העוצמה (ימי מסחר)",
@@ -232,10 +232,7 @@ strength_horizon = int(
         key="backtest_horizon",
     )
 )
-st.caption(
-    "ציוני העוצמה מתעדכנים לפי ביצועי האות בעבר באופק שנבחר. "
-    "הציון מנכה את שיעור הבסיס ומעניש מדגם קטן."
-)
+st.caption("ציוני 1–10 מושבתים עד להשלמת הוולידציה המתוקנת. החצים הם תיאור מצב, לא המלצה.")
 
 for start in range(0, len(data.cards), 4):
     columns = st.columns(4)
@@ -263,9 +260,7 @@ for start in range(0, len(data.cards), 4):
         )
         column.caption(
             f"תנודתיות {card.volatility_arrow} "
-            f"עוצמה {vol_result.strength if vol_result else 1}/10 · "
-            f"ת״א־35 {card.market_arrow} עוצמה "
-            f"{market_result.strength if market_result else 1}/10"
+            f"· ת״א־35 {card.market_arrow} · Context only"
         )
 
 with st.expander("תוצאות backtest — כל האינדיקטורים והאסטרטגיות", expanded=False):
@@ -292,9 +287,7 @@ with st.expander("תוצאות backtest — כל האינדיקטורים והא
             {
                 "אינדיקטור": card.label,
                 "חץ תנודתיות": card.volatility_arrow,
-                "עוצמת תנודתיות": (
-                    f"{vol_result.strength}/10" if vol_result else "—"
-                ),
+                "סטטוס תנודתיות": "Context only",
                 "דיוק תנודתיות": (
                     f"{vol_result.hit_rate:.1%}"
                     if vol_result and vol_result.hit_rate is not None
@@ -307,9 +300,7 @@ with st.expander("תוצאות backtest — כל האינדיקטורים והא
                 ),
                 "n תנודתיות": vol_result.observations if vol_result else 0,
                 "חץ ת״א־35": card.market_arrow,
-                "עוצמת ת״א־35": (
-                    f"{market_result.strength}/10" if market_result else "—"
-                ),
+                "סטטוס ת״א־35": "Context only",
                 "דיוק ת״א־35": (
                     f"{market_result.hit_rate:.1%}"
                     if market_result and market_result.hit_rate is not None
@@ -344,7 +335,7 @@ with st.expander("תוצאות backtest — כל האינדיקטורים והא
                     if result.baseline_rate is not None
                     else "—"
                 ),
-                "עוצמה": f"{result.strength}/10",
+                "סטטוס": "Context only",
                 "איכות מדגם": result.sample_quality,
             }
         )

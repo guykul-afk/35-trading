@@ -34,6 +34,7 @@ class ResearchBacktestTests(unittest.TestCase):
             self.assertIn("indicator_intensity", report.tables)
             self.assertIn("strategy_sensitivity", report.tables)
             self.assertIn("forecast_calibration", report.tables)
+            self.assertIn("har_rv_benchmark", report.tables)
             self.assertIn("knowledge_ranking", report.tables)
             self.assertIn("context_ablation_oos", report.tables)
             ablation = report.tables["context_ablation_oos"]
@@ -45,16 +46,19 @@ class ResearchBacktestTests(unittest.TestCase):
                 {"n_eff", "lift", "fdr_q", "eligible", "status"}
                 <= set(ablation.columns)
             )
+            self.assertEqual(
+                set(report.tables["knowledge_ranking"]["tier"]),
+                {"C — context only (validation freeze)"},
+            )
+            aggregate = report.tables["indicator_aggregate"]
             self.assertTrue(
-                set(report.tables["knowledge_ranking"]["tier"])
-                <= {
-                    "A — recommendation input",
-                    "B — supporting input",
-                    "C — context only",
-                    "A — recommendation rule",
-                    "B — conditional candidate",
-                    "C — exploratory / unavailable",
+                {
+                    "n_eff",
+                    "nonoverlap_accuracy_min",
+                    "nonoverlap_accuracy",
+                    "nonoverlap_accuracy_max",
                 }
+                <= set(aggregate.columns)
             )
 
     def test_markdown_contains_all_results_in_one_document(self):

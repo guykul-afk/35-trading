@@ -186,7 +186,9 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     close = ta["close"].astype(float)
     returns = np.log(close).diff()
     for window in (5, 20, 60):
-        ta[f"rv_{window}"] = returns.rolling(window).std(ddof=1) * math.sqrt(252)
+        # Population volatility keeps short and long windows on the same scale.
+        # ddof=1 creates a material small-window bias (especially at h=3).
+        ta[f"rv_{window}"] = returns.rolling(window).std(ddof=0) * math.sqrt(252)
 
     ewma_values = np.full(len(ta), np.nan)
     yz_values = np.full(len(ta), np.nan)
@@ -209,6 +211,13 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     ta["gap_share_20"] = gap_values
     ta["rv_acceleration"] = ta["rv_5"] / ta["rv_20"]
     ta["rv_20_60_ratio"] = ta["rv_20"] / ta["rv_60"]
+    rv_median_120 = ta["rv_20"].rolling(120, min_periods=60).median()
+    ta["rv_level_ratio"] = ta["rv_20"] / rv_median_120
+    ta["rv_level_bucket"] = pd.cut(
+        ta["rv_level_ratio"],
+        bins=[-np.inf, 0.85, 1.15, np.inf],
+        labels=["low", "mid", "high"],
+    ).astype(object)
 
     previous_close = close.shift(1)
     true_range = pd.concat(
@@ -283,8 +292,13 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     aligned: dict[str, pd.Series] = {}
     for symbol in ("VIX9D", "VIX", "VIX3M"):
         frame = _bars_frame(repository, symbol)
+        # A US close becomes observable in Israel on the following calendar
+        # day. Moving the availability index by one day preserves Friday's
+        # close for Sunday while preventing same-date Mon-Thu look-ahead.
+        available = frame["close"].astype(float).copy()
+        available.index = available.index + pd.Timedelta(days=1)
         aligned[symbol] = (
-            _asof(frame["close"].astype(float), ta.index)
+            _asof(available, ta.index)
             if not frame.empty
             else pd.Series(np.nan, index=ta.index)
         )
@@ -354,7 +368,7 @@ def _outcomes(frame: pd.DataFrame, horizon: int) -> pd.DataFrame:
     for position in range(len(frame) - horizon):
         changes = np.diff(log_close[position : position + horizon + 1])
         if len(changes) >= 2:
-            forward_rv[position] = float(np.std(changes, ddof=1) * math.sqrt(252))
+            forward_rv[position] = float(np.std(changes, ddof=0) * math.sqrt(252))
     result["forward_rv"] = forward_rv
     result["volatility_direction"] = [
         (
@@ -532,6 +546,9 @@ def run_backtest(
                     volatility_score=float(row["volatility_direction_score"]),
                     regime=str(row["regime"]),
                     horizon_days=horizon,
+                    # Research evaluates the candidate rule. Deployment
+                    # eligibility is a separate, forcibly closed safety gate.
+                    premium_sale_eligible=True,
                 )
                 if recommendation.primary is not None:
                     future = float(frame["close"].iloc[position + horizon])
@@ -601,7 +618,7 @@ def run_backtest(
         indicator_results=tuple(indicator_results),
         strategy_results=tuple(strategy_results),
         warnings=(
-            "עוצמה 1–10 מבוססת על שיעור פגיעה מכווץ למדגם ניטרלי ועל גודל המדגם.",
+            "ציוני 1–10 מושבתים עד להשלמת ולידציה סטטיסטית מתוקנת.",
             "בדיקת האסטרטגיות מודדת הצלחת תרחיש מדד בלבד, לא P&L של אופציות.",
             "Calendar/Diagonal אינה ניתנת לבדיקה ללא היסטוריית IV לשתי פקיעות.",
         ),
