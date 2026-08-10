@@ -239,11 +239,33 @@ def compute_latest_metrics(
 
     # Direction scores summarize current state only; they are deliberately not
     # calibrated as return forecasts or trading signals.
+    # The three local-IV transforms are one information family.  Collapse them
+    # to a single vote so VTA35 cannot outvote independent RV/global inputs.
+    local_iv_inputs = (
+        (vta_change, 0.0),
+        (vta_z60.value if vta_z60 else None, 0.0),
+        (spread.value if current_vta is not None and rv[20] is not None else None, 0.0),
+    )
+    local_iv_votes = [
+        1 if value > neutral else -1 if value < neutral else 0
+        for value, neutral in local_iv_inputs
+        if value is not None
+    ]
+    local_iv_score = (
+        sum(local_iv_votes) / len(local_iv_votes) if local_iv_votes else None
+    )
+    add(
+        "local_iv_family_score",
+        local_iv_score,
+        () if local_iv_score is not None else ("insufficient_local_iv_inputs",),
+        available_inputs=len(local_iv_votes),
+        family="local_iv_no_double_count",
+    )
+
     vol_inputs = (
         (rv_structure, 1.0),
         (atr_acceleration, 1.0),
-        (vta_change, 0.0),
-        (vta_z60.value if vta_z60 else None, 0.0),
+        (local_iv_score, 0.0),
         (vix9_vix, 1.0),
         (vix_vix3, 1.0),
     )

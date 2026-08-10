@@ -45,6 +45,13 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(bundle.backtest.ta35_observations, 300)
             self.assertTrue(bundle.backtest.indicator_results)
             self.assertTrue(bundle.backtest.strategy_results)
+            self.assertIn(bundle.regime_matrix.market_state, {"עולה", "ניטרלי", "יורד"})
+            self.assertIn(
+                bundle.regime_matrix.volatility_state,
+                {"מתרחבת", "מעורבת", "מתכווצת"},
+            )
+            self.assertFalse(bundle.premium_evidence.eligible)
+            self.assertTrue(bundle.context_ablation)
 
             cards = {card.key: card for card in bundle.cards}
             self.assertEqual(cards["rv_acceleration"].market_arrow, "↔")
@@ -80,6 +87,8 @@ class ServiceTests(unittest.TestCase):
         self.assertIn('key="strategy_horizon"', source)
         self.assertIn('key="probability_fan_horizon"', source)
         self.assertIn("periods=fan_horizon", source)
+        self.assertIn("מפת התאמת תרחיש", source)
+        self.assertIn("אינה payoff", source)
 
 
 if __name__ == "__main__":

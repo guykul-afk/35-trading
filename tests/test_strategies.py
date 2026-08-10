@@ -37,9 +37,28 @@ class StrategyRecommendationTests(unittest.TestCase):
             trend_score=0.0,
             volatility_score=-0.8,
             implied_volatility=0.23,
+            premium_sale_eligible=True,
         )
         self.assertEqual(result.primary.name, "Iron Condor")
         self.assertEqual(result.focus_range, result.base_range)
+
+    def test_rich_premium_is_blocked_without_evidence_gate(self):
+        result = self.recommend(
+            trend_score=0.0,
+            volatility_score=-0.8,
+            implied_volatility=0.23,
+        )
+        self.assertFalse(result.premium_sale_eligible)
+        self.assertNotIn(
+            result.primary.name if result.primary else None,
+            {"Iron Condor", "Iron Butterfly", "Bull Put Spread", "Bear Call Spread"},
+        )
+        self.assertTrue(any("חסומה" in warning for warning in result.warnings))
+
+    def test_scenario_fit_is_not_a_payoff(self):
+        result = self.recommend()
+        self.assertTrue(result.scenario_fit)
+        self.assertTrue(all(len(row) == 3 for row in result.scenario_fit))
 
     def test_negative_contraction_selects_bearish_butterfly(self):
         result = self.recommend(trend_score=-0.6)
@@ -53,6 +72,7 @@ class StrategyRecommendationTests(unittest.TestCase):
             volatility_score=-0.8,
             implied_volatility=0.25,
             regime="לחץ גבוה",
+            premium_sale_eligible=True,
         )
         self.assertNotIn(result.primary.name, {"Iron Condor", "Iron Butterfly"})
 

@@ -35,6 +35,16 @@ class ResearchBacktestTests(unittest.TestCase):
             self.assertIn("strategy_sensitivity", report.tables)
             self.assertIn("forecast_calibration", report.tables)
             self.assertIn("knowledge_ranking", report.tables)
+            self.assertIn("context_ablation_oos", report.tables)
+            ablation = report.tables["context_ablation_oos"]
+            self.assertEqual(
+                set(ablation["feature"]),
+                {"fx_equity_state", "ta35_vta35_corr_60"},
+            )
+            self.assertTrue(
+                {"n_eff", "lift", "fdr_q", "eligible", "status"}
+                <= set(ablation.columns)
+            )
             self.assertTrue(
                 set(report.tables["knowledge_ranking"]["tier"])
                 <= {

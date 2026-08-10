@@ -35,6 +35,8 @@ class StrategyRecommendation:
     target_level: float | None
     explanation: str
     warnings: tuple[str, ...]
+    scenario_fit: tuple[tuple[str, str, str], ...]
+    premium_sale_eligible: bool
 
 
 def _candidate(name: str, rationale: str, risk_note: str) -> StrategyCandidate:
@@ -64,6 +66,7 @@ def recommend_strategy(
     volatility_score: float | None,
     regime: str,
     horizon_days: int = 14,
+    premium_sale_eligible: bool = False,
 ) -> StrategyRecommendation:
     """Return a bounded, general strategy-family recommendation.
 
@@ -110,6 +113,8 @@ def recommend_strategy(
             target_level=None,
             explanation="אין די נתונים לבחירת משפחת אסטרטגיה באופן עקבי.",
             warnings=tuple(missing),
+            scenario_fit=(),
+            premium_sale_eligible=False,
         )
 
     if trend_score >= 0.4:
@@ -220,13 +225,16 @@ def recommend_strategy(
             focus = (base[1], base[1] * 1.01) if base else None
             focus_label = "תרחיש הצלחה דורש מעבר משוער של ‎+1σ"
             target = base[1] if base else None
-        elif rich and not stressed:
+        elif rich and not stressed and premium_sale_eligible:
             primary = bull_put
             alternatives = (bullish_butterfly, bull_call)
             explanation = "המגמה חיובית והפרמיה הגלומה עשירה יחסית; מרווח אשראי מוגבל־סיכון מתאים לשוק יציב עד עולה."
         elif vol_state == "מתכווצת":
             primary = bullish_butterfly
-            alternatives = (bull_call, bull_put if rich and not stressed else calendar)
+            alternatives = (
+                bull_call,
+                bull_put if rich and not stressed and premium_sale_eligible else calendar,
+            )
             explanation = "המגמה חיובית אך התנודתיות בדחיסה; פרפר שורי מתאים יותר לעלייה מדודה לעבר אזור יעד מאשר להימור על פריצה."
         else:
             primary = bull_call
@@ -243,13 +251,16 @@ def recommend_strategy(
             focus = (base[0] * 0.99, base[0]) if base else None
             focus_label = "תרחיש הצלחה דורש מעבר משוער של ‎−1σ"
             target = base[0] if base else None
-        elif rich and not stressed:
+        elif rich and not stressed and premium_sale_eligible:
             primary = bear_call
             alternatives = (bearish_butterfly, bear_put)
             explanation = "המגמה שלילית והפרמיה הגלומה עשירה יחסית; מרווח אשראי מוגבל־סיכון מתאים לשוק יציב עד יורד."
         elif vol_state == "מתכווצת":
             primary = bearish_butterfly
-            alternatives = (bear_put, bear_call if rich and not stressed else calendar)
+            alternatives = (
+                bear_put,
+                bear_call if rich and not stressed and premium_sale_eligible else calendar,
+            )
             explanation = "המגמה שלילית אך התנודתיות בדחיסה; פרפר דובי מתאים לירידה מדודה לעבר אזור יעד."
         else:
             primary = bear_put
@@ -263,7 +274,12 @@ def recommend_strategy(
             explanation = "אין כיוון מובהק אך התנודתיות מתרחבת; המבנה מחפש תנועה גדולה באחד משני הכיוונים."
             focus = base
             focus_label = "נדרשת יציאה מעבר לטווח ‎±1σ בקירוב"
-        elif vol_state == "מתכווצת" and rich and not stressed:
+        elif (
+            vol_state == "מתכווצת"
+            and rich
+            and not stressed
+            and premium_sale_eligible
+        ):
             primary = iron_condor
             alternatives = (iron_butterfly, long_butterfly)
             explanation = "המגמה ניטרלית, הטווחים בדחיסה והפרמיה עשירה; Condor מוגבל־סיכון מתאים לתרחיש של הישארות בטווח."
@@ -289,11 +305,18 @@ def recommend_strategy(
                 target_level=spot,
                 explanation="אותות הכיוון והתנודתיות אינם יוצרים כרגע תרחיש עקבי מספיק לבחירת מבנה עיקרי.",
                 warnings=tuple(warnings),
+                scenario_fit=(),
+                premium_sale_eligible=premium_sale_eligible,
             )
 
     if stressed and primary in {bull_put, bear_call, iron_condor, iron_butterfly}:
         warnings.append(
             "משטר הלחץ חוסם העדפה למכירת פרמיה; הוצגה חלופה קנויה ומוגבלת־סיכון."
+        )
+    if rich and not premium_sale_eligible:
+        warnings.append(
+            "מכירת פרמיה חסומה: כרטיס הראיות טרם עבר מדגם, lift OOS, FDR, "
+            "non-overlap ויציבות משטרים."
         )
     if horizon_days == 3:
         warnings.append(
@@ -304,6 +327,16 @@ def recommend_strategy(
             "באופק 30 יום Calendar/Diagonal דורשים נתוני IV לשתי פקיעות לפני בחירה מעשית."
         )
 
+    scenario_fit = (
+        ("מגמה", direction, "מתאים" if direction != "ניטרלי / מעורב" else "מותנה"),
+        ("תנודתיות", vol_state, "מתאים" if vol_state != "מעורבת" else "מותנה"),
+        (
+            "תמחור IV",
+            pricing,
+            "זכאי" if premium_sale_eligible else "הקשר בלבד",
+        ),
+        ("משטר לחץ", regime, "חסום" if stressed else "תקין"),
+    )
     return StrategyRecommendation(
         status="מועמד כללי",
         primary=primary,
@@ -319,4 +352,6 @@ def recommend_strategy(
         target_level=target,
         explanation=explanation,
         warnings=tuple(warnings),
+        scenario_fit=scenario_fit,
+        premium_sale_eligible=premium_sale_eligible,
     )

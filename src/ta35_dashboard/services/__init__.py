@@ -8,7 +8,9 @@ from .backtest import (
 )
 from .dashboard import (
     DashboardBundle,
+    EvidenceCard,
     MetricCard,
+    RegimeMatrix,
     SeriesHealth,
     SnapshotMeta,
     load_dashboard_bundle,
@@ -26,7 +28,9 @@ __all__ = [
     "DEFAULT_STRENGTH_HORIZON",
     "BacktestReport",
     "DashboardBundle",
+    "EvidenceCard",
     "MetricCard",
+    "RegimeMatrix",
     "ResearchReport",
     "SeriesHealth",
     "SignalBacktest",

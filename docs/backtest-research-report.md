@@ -1,7 +1,9 @@
 # TA-35 dashboard — comprehensive backtest research
 
-Generated: 2026-08-09 17:41 UTC  
-TA-35 sample: 2023-08-08 to 2026-08-07 (738 sessions)  
+Generated: 2026-08-10 05:23 UTC
+
+TA-35 sample: 2023-08-08 to 2026-08-07 (738 sessions)
+
 Horizons: 3, 7, 14, 30 trading days
 
 ## Executive interpretation
@@ -10,13 +12,13 @@ This document is a research knowledge base for recommendation calibration. It te
 
 
 - 3d indicator leader: vrp_spread / volatility (lift +11.8%, n=715, strength 8/10, FDR q=0.000).
-- 3d strategy-scenario leader: Long Butterfly / Condor קנוי (uplift +10.7%, n=22, strength 2/10, FDR q=0.924; exploratory unless it passes the knowledge-tier gates).
+- 3d strategy-scenario leader: פרפר Put דובי / Broken-Wing Butterfly (uplift +6.1%, n=56, strength 3/10, FDR q=0.979; exploratory unless it passes the knowledge-tier gates).
 - 7d indicator leader: vrp_spread / volatility (lift +16.4%, n=711, strength 10/10, FDR q=0.000).
-- 7d strategy-scenario leader: Bull Call Spread (uplift +15.2%, n=65, strength 6/10, FDR q=0.256; exploratory unless it passes the knowledge-tier gates).
+- 7d strategy-scenario leader: פרפר Put דובי / Broken-Wing Butterfly (uplift +9.0%, n=55, strength 3/10, FDR q=0.763; exploratory unless it passes the knowledge-tier gates).
 - 14d indicator leader: vrp_spread / volatility (lift +15.1%, n=704, strength 10/10, FDR q=0.000).
-- 14d strategy-scenario leader: Bear Put Spread (uplift +12.1%, n=35, strength 3/10, FDR q=0.622; exploratory unless it passes the knowledge-tier gates).
+- 14d strategy-scenario leader: Bear Put Spread (uplift +9.5%, n=72, strength 4/10, FDR q=0.635; exploratory unless it passes the knowledge-tier gates).
 - 30d indicator leader: vrp_spread / volatility (lift +16.9%, n=688, strength 10/10, FDR q=0.000).
-- 30d strategy-scenario leader: Bear Put Spread (uplift +10.0%, n=35, strength 2/10, FDR q=0.622; exploratory unless it passes the knowledge-tier gates).
+- 30d strategy-scenario leader: Bear Put Spread (uplift +13.7%, n=71, strength 6/10, FDR q=0.114; exploratory unless it passes the knowledge-tier gates).
 - No strategy-selection rule passed the minimum sample plus 10% FDR gate; strategy rankings are exploratory and should not yet alter live recommendations automatically.
 
 
@@ -133,61 +135,61 @@ This document is a research knowledge base for recommendation calibration. It te
 | indicator | vix9d_vix_ratio | volatility | 30 | 688 | -0.0316 | 1.0000 | 1/4 | 1/4 | C — context only |
 | indicator | gap_share_20 | volatility | 30 | 688 | -0.1077 | 1.0000 | 0/4 | 0/4 | C — context only |
 | indicator | rv_20_60_ratio | volatility | 30 | 648 | -0.1568 | 1.0000 | 0/4 | 0/4 | C — context only |
-| strategy_proxy | Long Butterfly / Condor קנוי | scenario | 3 | 22 | 0.1066 | 0.9235 | 2/2 | 1/2 | C — exploratory / unavailable |
-| strategy_proxy | פרפר Put דובי / Broken-Wing Butterfly | scenario | 3 | 27 | 0.0553 | 0.9991 | 2/3 | 2/3 | C — exploratory / unavailable |
-| strategy_proxy | פרפר Call שורי / Broken-Wing Butterfly | scenario | 3 | 247 | 0.0254 | 0.9991 | 3/4 | 1/3 | C — exploratory / unavailable |
-| strategy_proxy | Bull Call Spread | scenario | 3 | 65 | 0.0222 | 0.9991 | 2/3 | 3/4 | C — exploratory / unavailable |
-| strategy_proxy | Put Ratio Backspread 1×2 | scenario | 3 | 34 | -0.0405 | 0.9991 | 0/3 | 1/3 | C — exploratory / unavailable |
-| strategy_proxy | Bear Put Spread | scenario | 3 | 36 | -0.0457 | 0.9991 | 2/4 | 2/3 | C — exploratory / unavailable |
-| strategy_proxy | Iron Condor | scenario | 3 | 18 | -0.0464 | 0.9991 | 1/1 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Bear Call Spread | scenario | 3 | 57 | -0.0789 | 0.9991 | 2/4 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Bull Put Spread | scenario | 3 | 156 | -0.1064 | 0.9991 | 1/4 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Call Ratio Backspread 1×2 | scenario | 3 | 19 | -0.1084 | 0.9991 | 0/2 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Long Straddle / Strangle | scenario | 3 | 19 | -0.1846 | 0.9991 | 0/1 | 0/3 | C — exploratory / unavailable |
+| strategy_proxy | פרפר Put דובי / Broken-Wing Butterfly | scenario | 3 | 56 | 0.0612 | 0.9785 | 3/4 | 3/3 | C — exploratory / unavailable |
+| strategy_proxy | Long Butterfly / Condor קנוי | scenario | 3 | 32 | 0.0583 | 0.9785 | 3/4 | 1/2 | C — exploratory / unavailable |
+| strategy_proxy | פרפר Call שורי / Broken-Wing Butterfly | scenario | 3 | 286 | -0.0053 | 0.9785 | 1/4 | 0/3 | C — exploratory / unavailable |
+| strategy_proxy | Bull Call Spread | scenario | 3 | 195 | -0.0137 | 0.9785 | 1/4 | 1/4 | C — exploratory / unavailable |
+| strategy_proxy | Put Ratio Backspread 1×2 | scenario | 3 | 23 | -0.0418 | 0.9785 | 1/2 | 0/2 | C — exploratory / unavailable |
+| strategy_proxy | Bear Put Spread | scenario | 3 | 75 | -0.0735 | 0.9785 | 1/4 | 1/4 | C — exploratory / unavailable |
+| strategy_proxy | Call Ratio Backspread 1×2 | scenario | 3 | 6 | -0.2137 | 0.9785 | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Long Straddle / Strangle | scenario | 3 | 5 | -0.3425 | 0.9785 | 0/1 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Bear Call Spread | scenario | 3 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Bull Put Spread | scenario | 3 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | Calendar / Diagonal | scenario | 3 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | Iron Butterfly | scenario | 3 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Iron Condor | scenario | 3 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | פרפר הפוך / Long Iron Condor | scenario | 3 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
-| strategy_proxy | Bull Call Spread | scenario | 7 | 65 | 0.1522 | 0.2556 | 3/3 | 4/4 | C — exploratory / unavailable |
-| strategy_proxy | Bear Put Spread | scenario | 7 | 36 | 0.1171 | 0.6218 | 3/4 | 3/3 | C — exploratory / unavailable |
-| strategy_proxy | פרפר Put דובי / Broken-Wing Butterfly | scenario | 7 | 26 | 0.0157 | 0.9991 | 1/3 | 1/3 | C — exploratory / unavailable |
-| strategy_proxy | פרפר Call שורי / Broken-Wing Butterfly | scenario | 7 | 247 | 0.0034 | 0.9991 | 2/4 | 2/3 | C — exploratory / unavailable |
-| strategy_proxy | Put Ratio Backspread 1×2 | scenario | 7 | 34 | -0.0027 | 0.9991 | 1/3 | 1/3 | C — exploratory / unavailable |
-| strategy_proxy | Iron Condor | scenario | 7 | 17 | -0.0100 | 0.9991 | 1/1 | 1/2 | C — exploratory / unavailable |
-| strategy_proxy | Call Ratio Backspread 1×2 | scenario | 7 | 19 | -0.0415 | 0.9991 | 0/2 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Bull Put Spread | scenario | 7 | 156 | -0.0548 | 0.9991 | 1/4 | 1/2 | C — exploratory / unavailable |
-| strategy_proxy | Bear Call Spread | scenario | 7 | 56 | -0.0551 | 0.9991 | 2/4 | 1/2 | C — exploratory / unavailable |
-| strategy_proxy | Long Butterfly / Condor קנוי | scenario | 7 | 21 | -0.1269 | 0.9991 | 1/2 | 1/2 | C — exploratory / unavailable |
-| strategy_proxy | Long Straddle / Strangle | scenario | 7 | 19 | -0.2903 | 0.9991 | 0/1 | 0/3 | C — exploratory / unavailable |
+| strategy_proxy | פרפר Put דובי / Broken-Wing Butterfly | scenario | 7 | 55 | 0.0898 | 0.7625 | 3/4 | 3/3 | C — exploratory / unavailable |
+| strategy_proxy | Bull Call Spread | scenario | 7 | 195 | 0.0137 | 0.9785 | 1/4 | 3/4 | C — exploratory / unavailable |
+| strategy_proxy | Bear Put Spread | scenario | 7 | 74 | 0.0090 | 0.9785 | 2/4 | 2/4 | C — exploratory / unavailable |
+| strategy_proxy | Put Ratio Backspread 1×2 | scenario | 7 | 23 | -0.0040 | 0.9785 | 1/2 | 1/2 | C — exploratory / unavailable |
+| strategy_proxy | Long Butterfly / Condor קנוי | scenario | 7 | 31 | -0.0102 | 0.9785 | 2/3 | 1/2 | C — exploratory / unavailable |
+| strategy_proxy | פרפר Call שורי / Broken-Wing Butterfly | scenario | 7 | 286 | -0.0433 | 0.9785 | 1/4 | 1/3 | C — exploratory / unavailable |
+| strategy_proxy | Call Ratio Backspread 1×2 | scenario | 7 | 6 | -0.2521 | 0.9785 | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Long Straddle / Strangle | scenario | 7 | 5 | -0.3430 | 0.9785 | 0/1 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Bear Call Spread | scenario | 7 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Bull Put Spread | scenario | 7 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | Calendar / Diagonal | scenario | 7 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | Iron Butterfly | scenario | 7 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Iron Condor | scenario | 7 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | פרפר הפוך / Long Iron Condor | scenario | 7 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
-| strategy_proxy | Bear Put Spread | scenario | 14 | 35 | 0.1212 | 0.6218 | 2/4 | 2/3 | C — exploratory / unavailable |
-| strategy_proxy | פרפר Call שורי / Broken-Wing Butterfly | scenario | 14 | 244 | 0.0639 | 0.4616 | 4/4 | 3/3 | C — exploratory / unavailable |
-| strategy_proxy | Iron Condor | scenario | 14 | 17 | 0.0605 | 0.9991 | 1/1 | 2/2 | C — exploratory / unavailable |
-| strategy_proxy | Bear Call Spread | scenario | 14 | 55 | 0.0224 | 0.9991 | 2/4 | 1/2 | C — exploratory / unavailable |
-| strategy_proxy | Bull Call Spread | scenario | 14 | 65 | 0.0151 | 0.9991 | 2/3 | 2/4 | C — exploratory / unavailable |
-| strategy_proxy | Put Ratio Backspread 1×2 | scenario | 14 | 34 | -0.0360 | 0.9991 | 0/3 | 1/3 | C — exploratory / unavailable |
-| strategy_proxy | פרפר Put דובי / Broken-Wing Butterfly | scenario | 14 | 26 | -0.0497 | 0.9991 | 1/3 | 1/3 | C — exploratory / unavailable |
-| strategy_proxy | Bull Put Spread | scenario | 14 | 155 | -0.0535 | 0.9991 | 1/4 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Call Ratio Backspread 1×2 | scenario | 14 | 19 | -0.0788 | 0.9991 | 0/2 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Long Butterfly / Condor קנוי | scenario | 14 | 21 | -0.1138 | 0.9991 | 0/2 | 1/2 | C — exploratory / unavailable |
-| strategy_proxy | Long Straddle / Strangle | scenario | 14 | 19 | -0.1968 | 0.9991 | 0/1 | 0/3 | C — exploratory / unavailable |
+| strategy_proxy | Bear Put Spread | scenario | 14 | 72 | 0.0954 | 0.6347 | 3/4 | 3/4 | C — exploratory / unavailable |
+| strategy_proxy | פרפר Call שורי / Broken-Wing Butterfly | scenario | 14 | 283 | 0.0066 | 0.9785 | 2/4 | 1/3 | C — exploratory / unavailable |
+| strategy_proxy | פרפר Put דובי / Broken-Wing Butterfly | scenario | 14 | 55 | -0.0056 | 0.9785 | 2/4 | 2/3 | C — exploratory / unavailable |
+| strategy_proxy | Put Ratio Backspread 1×2 | scenario | 14 | 23 | -0.0219 | 0.9785 | 0/2 | 1/2 | C — exploratory / unavailable |
+| strategy_proxy | Bull Call Spread | scenario | 14 | 194 | -0.0225 | 0.9785 | 1/4 | 2/4 | C — exploratory / unavailable |
+| strategy_proxy | Long Butterfly / Condor קנוי | scenario | 14 | 31 | -0.0616 | 0.9785 | 1/3 | 1/2 | C — exploratory / unavailable |
+| strategy_proxy | Long Straddle / Strangle | scenario | 14 | 5 | -0.1547 | 0.9785 | 0/1 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Call Ratio Backspread 1×2 | scenario | 14 | 6 | -0.2893 | 0.9785 | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Bear Call Spread | scenario | 14 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Bull Put Spread | scenario | 14 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | Calendar / Diagonal | scenario | 14 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | Iron Butterfly | scenario | 14 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Iron Condor | scenario | 14 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | פרפר הפוך / Long Iron Condor | scenario | 14 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
-| strategy_proxy | Bear Put Spread | scenario | 30 | 35 | 0.0996 | 0.6218 | 3/4 | 3/3 | C — exploratory / unavailable |
-| strategy_proxy | Bull Call Spread | scenario | 30 | 65 | 0.0894 | 0.6218 | 2/3 | 4/4 | C — exploratory / unavailable |
-| strategy_proxy | Bear Call Spread | scenario | 30 | 47 | 0.0201 | 0.9991 | 2/3 | 2/2 | C — exploratory / unavailable |
-| strategy_proxy | פרפר Call שורי / Broken-Wing Butterfly | scenario | 30 | 243 | 0.0086 | 0.9991 | 2/4 | 3/3 | C — exploratory / unavailable |
-| strategy_proxy | פרפר Put דובי / Broken-Wing Butterfly | scenario | 30 | 22 | 0.0054 | 0.9991 | 1/2 | 2/3 | C — exploratory / unavailable |
-| strategy_proxy | Call Ratio Backspread 1×2 | scenario | 30 | 19 | -0.0142 | 0.9991 | 1/2 | 1/2 | C — exploratory / unavailable |
-| strategy_proxy | Put Ratio Backspread 1×2 | scenario | 30 | 34 | -0.0374 | 0.9991 | 0/3 | 1/3 | C — exploratory / unavailable |
-| strategy_proxy | Bull Put Spread | scenario | 30 | 155 | -0.0689 | 0.9991 | 1/4 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Iron Condor | scenario | 30 | 16 | -0.1755 | 0.9991 | 0/1 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Long Butterfly / Condor קנוי | scenario | 30 | 19 | -0.2162 | 0.9991 | 0/2 | 0/2 | C — exploratory / unavailable |
-| strategy_proxy | Long Straddle / Strangle | scenario | 30 | 19 | -0.2916 | 0.9991 | 0/1 | 0/3 | C — exploratory / unavailable |
+| strategy_proxy | Bear Put Spread | scenario | 30 | 71 | 0.1370 | 0.1139 | 3/4 | 4/4 | C — exploratory / unavailable |
+| strategy_proxy | Bull Call Spread | scenario | 30 | 194 | -0.0093 | 0.9785 | 1/4 | 3/4 | C — exploratory / unavailable |
+| strategy_proxy | Put Ratio Backspread 1×2 | scenario | 30 | 23 | -0.0234 | 0.9785 | 0/2 | 1/2 | C — exploratory / unavailable |
+| strategy_proxy | פרפר Call שורי / Broken-Wing Butterfly | scenario | 30 | 282 | -0.0266 | 0.9785 | 1/4 | 1/3 | C — exploratory / unavailable |
+| strategy_proxy | פרפר Put דובי / Broken-Wing Butterfly | scenario | 30 | 44 | -0.0628 | 0.9785 | 0/3 | 1/3 | C — exploratory / unavailable |
+| strategy_proxy | Long Butterfly / Condor קנוי | scenario | 30 | 28 | -0.1786 | 0.9785 | 0/3 | 0/2 | C — exploratory / unavailable |
+| strategy_proxy | Long Straddle / Strangle | scenario | 30 | 5 | -0.2495 | 0.9785 | 0/1 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Call Ratio Backspread 1×2 | scenario | 30 | 6 | -0.3826 | 0.9785 | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Bear Call Spread | scenario | 30 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Bull Put Spread | scenario | 30 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | Calendar / Diagonal | scenario | 30 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | Iron Butterfly | scenario | 30 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
+| strategy_proxy | Iron Condor | scenario | 30 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 | strategy_proxy | פרפר הפוך / Long Iron Condor | scenario | 30 | 0 | — | — | 0/0 | 0/0 | C — exploratory / unavailable |
 
 ## Data coverage
@@ -1475,58 +1477,58 @@ This document is a research knowledge base for recommendation calibration. It te
 
 | strategy | horizon | available_days | selected_n | selection_rate | successes | success_rate | unconditional_baseline | uplift | adjusted_success_rate | ci_low | ci_high | p_value | strength | mean_scenario_score | median_normalized_move | nonoverlap_n_min | nonoverlap_success_rate | positive_years | tested_years | positive_regimes | tested_regimes | sample_quality | limitation | fdr_q |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Bear Call Spread | 3 | 730 | 57 | 7.8% | 29 | 50.9% | 58.8% | -7.9% | 52.9% | 38.3% | 63.4% | 0.8869 | 1 | 0.1338 | 0.4964 | 17 | 51.4% | 2 | 4 | 0 | 2 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Bear Call Spread | 7 | 726 | 56 | 7.7% | 29 | 51.8% | 57.3% | -5.5% | 53.2% | 39.0% | 64.3% | 0.7979 | 1 | 0.0777 | 0.4513 | 6 | 52.9% | 2 | 4 | 1 | 2 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Bear Call Spread | 14 | 719 | 55 | 7.6% | 29 | 52.7% | 50.5% | 2.2% | 52.1% | 39.8% | 65.3% | 0.3698 | 2 | -0.0252 | 0.4866 | 2 | 54.6% | 2 | 4 | 1 | 2 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Bear Call Spread | 30 | 703 | 47 | 6.7% | 21 | 44.7% | 42.7% | 2.0% | 44.1% | 31.4% | 58.8% | 0.3905 | 1 | 0.2209 | 0.6402 | 1 | 42.4% | 2 | 3 | 2 | 2 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Bear Put Spread | 3 | 730 | 36 | 4.9% | 13 | 36.1% | 40.7% | -4.6% | 37.7% | 22.5% | 52.4% | 0.7118 | 1 | -0.4122 | 0.5617 | 9 | 36.1% | 2 | 4 | 2 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Bear Put Spread | 7 | 726 | 36 | 5.0% | 18 | 50.0% | 38.3% | 11.7% | 45.8% | 34.5% | 65.5% | 0.0742 | 3 | -0.1232 | -0.0029 | 3 | 51.9% | 3 | 4 | 3 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.6218 |
-| Bear Put Spread | 14 | 719 | 35 | 4.9% | 15 | 42.9% | 30.7% | 12.1% | 38.4% | 28.0% | 59.1% | 0.0601 | 3 | -0.0630 | 0.1004 | 1 | 50.4% | 2 | 4 | 2 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.6218 |
-| Bear Put Spread | 30 | 703 | 35 | 5.0% | 12 | 34.3% | 24.3% | 10.0% | 30.7% | 20.8% | 50.8% | 0.0848 | 2 | -0.4601 | 0.4653 | 1 | 32.5% | 3 | 4 | 3 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.6218 |
-| Bull Call Spread | 3 | 730 | 65 | 8.9% | 40 | 61.5% | 59.3% | 2.2% | 61.0% | 49.4% | 72.4% | 0.3576 | 2 | 0.1961 | 0.1938 | 21 | 61.1% | 2 | 3 | 3 | 4 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Bull Call Spread | 7 | 726 | 65 | 9.0% | 50 | 76.9% | 61.7% | 15.2% | 73.3% | 65.4% | 85.5% | 0.0058 | 6 | 0.4820 | 0.4656 | 5 | 77.5% | 3 | 3 | 4 | 4 | נמוכה | market-scenario proxy; no option P&L | 0.2556 |
-| Bull Call Spread | 14 | 719 | 65 | 9.0% | 46 | 70.8% | 69.3% | 1.5% | 70.4% | 58.8% | 80.4% | 0.3962 | 1 | 0.7554 | 0.8570 | 1 | 71.2% | 2 | 3 | 2 | 4 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Bull Call Spread | 30 | 703 | 65 | 9.2% | 55 | 84.6% | 75.7% | 8.9% | 82.5% | 73.9% | 91.4% | 0.0465 | 4 | 0.9798 | 1.0337 | 1 | 88.3% | 2 | 3 | 4 | 4 | נמוכה | market-scenario proxy; no option P&L | 0.6218 |
-| Bull Put Spread | 3 | 730 | 156 | 21.4% | 102 | 65.4% | 76.0% | -10.6% | 66.6% | 57.6% | 72.4% | 0.9991 | 1 | 0.5614 | 0.0918 | 51 | 65.3% | 1 | 4 | 0 | 2 | בינונית | market-scenario proxy; no option P&L | 0.9991 |
-| Bull Put Spread | 7 | 726 | 156 | 21.5% | 115 | 73.7% | 79.2% | -5.5% | 74.3% | 66.3% | 80.0% | 0.9542 | 1 | 0.6960 | 0.2793 | 20 | 73.6% | 1 | 4 | 1 | 2 | בינונית | market-scenario proxy; no option P&L | 0.9991 |
-| Bull Put Spread | 14 | 719 | 155 | 21.6% | 123 | 79.4% | 84.7% | -5.3% | 80.0% | 72.3% | 85.0% | 0.9678 | 1 | 0.9106 | 0.7387 | 7 | 79.2% | 1 | 4 | 0 | 2 | בינונית | market-scenario proxy; no option P&L | 0.9991 |
-| Bull Put Spread | 30 | 703 | 155 | 22.0% | 128 | 82.6% | 89.5% | -6.9% | 83.4% | 75.8% | 87.7% | 0.9974 | 1 | 1.0872 | 0.7347 | 1 | 83.9% | 1 | 4 | 0 | 2 | בינונית | market-scenario proxy; no option P&L | 0.9991 |
+| Bear Call Spread | 3 | 730 | 0 | 0.0% | 0 | — | 58.8% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Bear Call Spread | 7 | 726 | 0 | 0.0% | 0 | — | 57.3% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Bear Call Spread | 14 | 719 | 0 | 0.0% | 0 | — | 50.5% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Bear Call Spread | 30 | 703 | 0 | 0.0% | 0 | — | 42.7% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Bear Put Spread | 3 | 730 | 75 | 10.3% | 25 | 33.3% | 40.7% | -7.4% | 34.9% | 23.7% | 44.6% | 0.9025 | 1 | -0.4078 | 0.4694 | 23 | 33.1% | 1 | 4 | 1 | 4 | נמוכה | market-scenario proxy; no option P&L | 0.9785 |
+| Bear Put Spread | 7 | 726 | 74 | 10.2% | 29 | 39.2% | 38.3% | 0.9% | 39.0% | 28.9% | 50.6% | 0.4369 | 1 | -0.2917 | 0.3051 | 7 | 38.7% | 2 | 4 | 2 | 4 | נמוכה | market-scenario proxy; no option P&L | 0.9785 |
+| Bear Put Spread | 14 | 719 | 72 | 10.0% | 29 | 40.3% | 30.7% | 9.5% | 38.2% | 29.7% | 51.8% | 0.0397 | 4 | -0.1886 | 0.2483 | 2 | 44.6% | 3 | 4 | 3 | 4 | נמוכה | market-scenario proxy; no option P&L | 0.6347 |
+| Bear Put Spread | 30 | 703 | 71 | 10.1% | 27 | 38.0% | 24.3% | 13.7% | 35.0% | 27.6% | 49.7% | 0.0036 | 6 | -0.4860 | 0.4759 | 1 | 43.3% | 3 | 4 | 4 | 4 | נמוכה | market-scenario proxy; no option P&L | 0.1139 |
+| Bull Call Spread | 3 | 730 | 195 | 26.7% | 113 | 57.9% | 59.3% | -1.4% | 58.1% | 50.9% | 64.7% | 0.6511 | 1 | 0.1204 | 0.1863 | 63 | 57.9% | 1 | 4 | 1 | 4 | בינונית | market-scenario proxy; no option P&L | 0.9785 |
+| Bull Call Spread | 7 | 726 | 195 | 26.9% | 123 | 63.1% | 61.7% | 1.4% | 62.9% | 56.1% | 69.5% | 0.3471 | 2 | 0.2157 | 0.3238 | 22 | 63.5% | 1 | 4 | 3 | 4 | בינונית | market-scenario proxy; no option P&L | 0.9785 |
+| Bull Call Spread | 14 | 719 | 194 | 27.0% | 130 | 67.0% | 69.3% | -2.3% | 67.2% | 60.1% | 73.2% | 0.7517 | 1 | 0.4264 | 0.6647 | 5 | 66.1% | 1 | 4 | 2 | 4 | בינונית | market-scenario proxy; no option P&L | 0.9785 |
+| Bull Call Spread | 30 | 703 | 194 | 27.6% | 145 | 74.7% | 75.7% | -0.9% | 74.8% | 68.2% | 80.3% | 0.6191 | 1 | 0.7111 | 0.6604 | 3 | 74.8% | 1 | 4 | 3 | 4 | בינונית | market-scenario proxy; no option P&L | 0.9785 |
+| Bull Put Spread | 3 | 730 | 0 | 0.0% | 0 | — | 76.0% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Bull Put Spread | 7 | 726 | 0 | 0.0% | 0 | — | 79.2% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Bull Put Spread | 14 | 719 | 0 | 0.0% | 0 | — | 84.7% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Bull Put Spread | 30 | 703 | 0 | 0.0% | 0 | — | 89.5% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
 | Calendar / Diagonal | 3 | 0 | 0 | — | 0 | — | — | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | requires two-expiry IV history | — |
 | Calendar / Diagonal | 7 | 0 | 0 | — | 0 | — | — | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | requires two-expiry IV history | — |
 | Calendar / Diagonal | 14 | 0 | 0 | — | 0 | — | — | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | requires two-expiry IV history | — |
 | Calendar / Diagonal | 30 | 0 | 0 | — | 0 | — | — | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | requires two-expiry IV history | — |
-| Call Ratio Backspread 1×2 | 3 | 730 | 19 | 2.6% | 2 | 10.5% | 21.4% | -10.8% | 16.1% | 2.9% | 31.4% | 0.8756 | 1 | -0.9795 | 0.1589 | 5 | 10.8% | 0 | 2 | 0 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Call Ratio Backspread 1×2 | 7 | 726 | 19 | 2.6% | 4 | 21.1% | 25.2% | -4.2% | 23.2% | 8.5% | 43.3% | 0.6617 | 1 | -0.9907 | -0.1203 | 1 | 15.5% | 0 | 2 | 0 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Call Ratio Backspread 1×2 | 14 | 719 | 19 | 2.6% | 4 | 21.1% | 28.9% | -7.9% | 25.1% | 8.5% | 43.3% | 0.7755 | 1 | -0.4905 | 0.4508 | 1 | 18.2% | 0 | 2 | 0 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Call Ratio Backspread 1×2 | 30 | 703 | 19 | 2.7% | 7 | 36.8% | 38.3% | -1.4% | 37.6% | 19.1% | 59.0% | 0.5508 | 1 | -0.2410 | 0.5376 | 1 | 35.3% | 1 | 2 | 1 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
+| Call Ratio Backspread 1×2 | 3 | 730 | 6 | 0.8% | 0 | 0.0% | 21.4% | -21.4% | 16.4% | 0.0% | 39.0% | 0.8992 | 1 | -1.8507 | -1.0956 | 1 | 0.0% | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Call Ratio Backspread 1×2 | 7 | 726 | 6 | 0.8% | 0 | 0.0% | 25.2% | -25.2% | 19.4% | 0.0% | 39.0% | 0.9225 | 1 | -1.7229 | -0.4958 | 1 | 0.0% | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Call Ratio Backspread 1×2 | 14 | 719 | 6 | 0.8% | 0 | 0.0% | 28.9% | -28.9% | 22.3% | 0.0% | 39.0% | 0.9409 | 1 | -1.0129 | -0.1308 | 1 | 0.0% | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Call Ratio Backspread 1×2 | 30 | 703 | 6 | 0.9% | 0 | 0.0% | 38.3% | -38.3% | 29.4% | 0.0% | 39.0% | 0.9731 | 1 | -0.8869 | -0.0114 | 1 | 0.0% | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
 | Iron Butterfly | 3 | 730 | 0 | 0.0% | 0 | — | 34.8% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
 | Iron Butterfly | 7 | 726 | 0 | 0.0% | 0 | — | 36.5% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
 | Iron Butterfly | 14 | 719 | 0 | 0.0% | 0 | — | 35.2% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
 | Iron Butterfly | 30 | 703 | 0 | 0.0% | 0 | — | 32.1% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
-| Iron Condor | 3 | 730 | 18 | 2.5% | 11 | 61.1% | 65.8% | -4.6% | 63.6% | 38.6% | 79.7% | 0.6609 | 1 | 0.0363 | -0.0456 | 5 | 62.4% | 1 | 1 | 0 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Iron Condor | 7 | 726 | 17 | 2.3% | 11 | 64.7% | 65.7% | -1.0% | 65.2% | 41.3% | 82.7% | 0.5345 | 1 | 0.1918 | 0.0044 | 1 | 62.5% | 1 | 1 | 1 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Iron Condor | 14 | 719 | 17 | 2.4% | 12 | 70.6% | 64.5% | 6.1% | 67.3% | 46.9% | 86.7% | 0.3009 | 1 | 0.1717 | 0.8340 | 1 | 75.0% | 1 | 1 | 2 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Iron Condor | 30 | 703 | 16 | 2.3% | 6 | 37.5% | 55.0% | -17.5% | 47.2% | 18.5% | 61.4% | 0.9209 | 1 | -0.1304 | 1.1686 | 1 | 30.8% | 0 | 1 | 0 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Long Butterfly / Condor קנוי | 3 | 730 | 22 | 3.0% | 10 | 45.5% | 34.8% | 10.7% | 40.4% | 26.9% | 65.3% | 0.1469 | 2 | -0.1908 | 0.2444 | 7 | 45.8% | 2 | 2 | 1 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9235 |
-| Long Butterfly / Condor קנוי | 7 | 726 | 21 | 2.9% | 5 | 23.8% | 36.5% | -12.7% | 30.0% | 10.6% | 45.1% | 0.8865 | 1 | -0.4226 | 0.9732 | 1 | 28.6% | 1 | 2 | 1 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Long Butterfly / Condor קנוי | 14 | 719 | 21 | 2.9% | 5 | 23.8% | 35.2% | -11.4% | 29.4% | 10.6% | 45.1% | 0.8625 | 1 | -0.3344 | 0.6608 | 1 | 27.3% | 0 | 2 | 1 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Long Butterfly / Condor קנוי | 30 | 703 | 19 | 2.7% | 2 | 10.5% | 32.1% | -21.6% | 21.6% | 2.9% | 31.4% | 0.9782 | 1 | -0.5744 | 1.0286 | 1 | 10.7% | 0 | 2 | 0 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Long Straddle / Strangle | 3 | 730 | 19 | 2.6% | 3 | 15.8% | 34.2% | -18.5% | 25.3% | 5.5% | 37.6% | 0.9550 | 1 | -0.3957 | 0.2997 | 4 | 17.6% | 0 | 1 | 0 | 3 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Long Straddle / Strangle | 7 | 726 | 19 | 2.6% | 1 | 5.3% | 34.3% | -29.0% | 20.2% | 0.9% | 24.6% | 0.9962 | 1 | -0.3594 | 0.6372 | 1 | 7.1% | 0 | 1 | 0 | 3 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Long Straddle / Strangle | 14 | 719 | 19 | 2.6% | 3 | 15.8% | 35.5% | -19.7% | 25.9% | 5.5% | 37.6% | 0.9635 | 1 | -0.4300 | 0.4722 | 1 | 13.6% | 0 | 1 | 0 | 3 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Long Straddle / Strangle | 30 | 703 | 19 | 2.7% | 3 | 15.8% | 45.0% | -29.2% | 30.7% | 5.5% | 37.6% | 0.9947 | 1 | -0.4250 | 0.3824 | 1 | 14.7% | 0 | 1 | 0 | 3 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| Put Ratio Backspread 1×2 | 3 | 730 | 34 | 4.7% | 3 | 8.8% | 12.9% | -4.1% | 10.3% | 3.0% | 23.0% | 0.7598 | 1 | -1.4164 | 0.4313 | 10 | 8.9% | 0 | 3 | 1 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Put Ratio Backspread 1×2 | 7 | 726 | 34 | 4.7% | 3 | 8.8% | 9.1% | -0.3% | 8.9% | 3.0% | 23.0% | 0.5216 | 1 | -1.4624 | 0.4518 | 1 | 6.5% | 1 | 3 | 1 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Put Ratio Backspread 1×2 | 14 | 719 | 34 | 4.7% | 1 | 2.9% | 6.5% | -3.6% | 4.3% | 0.5% | 14.9% | 0.8018 | 1 | -1.4498 | 0.6098 | 1 | 2.6% | 0 | 3 | 1 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| Put Ratio Backspread 1×2 | 30 | 703 | 34 | 4.8% | 1 | 2.9% | 6.7% | -3.7% | 4.3% | 0.5% | 14.9% | 0.8090 | 1 | -1.6048 | 0.7291 | 1 | 4.3% | 0 | 3 | 1 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.9991 |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | 730 | 247 | 33.8% | 100 | 40.5% | 37.9% | 2.5% | 40.3% | 34.6% | 46.7% | 0.2053 | 2 | -0.2665 | 0.2533 | 78 | 40.4% | 3 | 4 | 1 | 3 | גבוהה | market-scenario proxy; no option P&L | 0.9991 |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | 726 | 247 | 34.0% | 91 | 36.8% | 36.5% | 0.3% | 36.8% | 31.1% | 43.0% | 0.4557 | 1 | -0.2625 | 0.2905 | 32 | 36.8% | 2 | 4 | 2 | 3 | גבוהה | market-scenario proxy; no option P&L | 0.9991 |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | 719 | 244 | 33.9% | 114 | 46.7% | 40.3% | 6.4% | 46.2% | 40.6% | 53.0% | 0.0210 | 5 | -0.1808 | 0.3900 | 13 | 46.1% | 4 | 4 | 3 | 3 | גבוהה | market-scenario proxy; no option P&L | 0.4616 |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | 703 | 243 | 34.6% | 93 | 38.3% | 37.4% | 0.9% | 38.2% | 32.4% | 44.5% | 0.3908 | 1 | -0.2698 | 0.6108 | 3 | 38.6% | 2 | 4 | 3 | 3 | גבוהה | market-scenario proxy; no option P&L | 0.9991 |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | 730 | 27 | 3.7% | 9 | 33.3% | 27.8% | 5.5% | 31.0% | 18.6% | 52.2% | 0.2608 | 2 | -0.4669 | 0.1882 | 8 | 31.7% | 2 | 3 | 2 | 3 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | 726 | 26 | 3.6% | 8 | 30.8% | 29.2% | 1.6% | 30.1% | 16.5% | 50.0% | 0.4302 | 1 | -0.4912 | 0.3663 | 2 | 28.8% | 1 | 3 | 1 | 3 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | 719 | 26 | 3.6% | 5 | 19.2% | 24.2% | -5.0% | 21.4% | 8.5% | 37.9% | 0.7230 | 1 | -0.6289 | 0.5298 | 1 | 16.7% | 1 | 3 | 1 | 3 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
-| פרפר Put דובי / Broken-Wing Butterfly | 30 | 703 | 22 | 3.1% | 4 | 18.2% | 17.6% | 0.5% | 17.9% | 7.3% | 38.5% | 0.4734 | 1 | -0.7950 | 0.2109 | 1 | 20.0% | 1 | 2 | 2 | 3 | לא מספקת | market-scenario proxy; no option P&L | 0.9991 |
+| Iron Condor | 3 | 730 | 0 | 0.0% | 0 | — | 65.8% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Iron Condor | 7 | 726 | 0 | 0.0% | 0 | — | 65.7% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Iron Condor | 14 | 719 | 0 | 0.0% | 0 | — | 64.5% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Iron Condor | 30 | 703 | 0 | 0.0% | 0 | — | 55.0% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
+| Long Butterfly / Condor קנוי | 3 | 730 | 32 | 4.4% | 13 | 40.6% | 34.8% | 5.8% | 38.4% | 25.5% | 57.7% | 0.2443 | 2 | -0.3713 | 0.1387 | 8 | 42.7% | 3 | 4 | 1 | 2 | נמוכה | market-scenario proxy; no option P&L | 0.9785 |
+| Long Butterfly / Condor קנוי | 7 | 726 | 31 | 4.3% | 11 | 35.5% | 36.5% | -1.0% | 35.9% | 21.1% | 53.1% | 0.5468 | 1 | -0.3526 | 0.0363 | 1 | 37.6% | 2 | 3 | 1 | 2 | נמוכה | market-scenario proxy; no option P&L | 0.9785 |
+| Long Butterfly / Condor קנוי | 14 | 719 | 31 | 4.3% | 9 | 29.0% | 35.2% | -6.2% | 31.4% | 16.1% | 46.6% | 0.7635 | 1 | -0.3355 | 0.6871 | 1 | 36.4% | 1 | 3 | 1 | 2 | נמוכה | market-scenario proxy; no option P&L | 0.9785 |
+| Long Butterfly / Condor קנוי | 30 | 703 | 28 | 4.0% | 4 | 14.3% | 32.1% | -17.9% | 21.7% | 5.7% | 31.5% | 0.9785 | 1 | -0.5641 | 1.0378 | 1 | 13.9% | 0 | 3 | 0 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Long Straddle / Strangle | 3 | 730 | 5 | 0.7% | 0 | 0.0% | 34.2% | -34.2% | 27.4% | 0.0% | 43.4% | 0.9467 | 1 | -0.6458 | -0.0464 | 1 | 0.0% | 0 | 1 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Long Straddle / Strangle | 7 | 726 | 5 | 0.7% | 0 | 0.0% | 34.3% | -34.3% | 27.4% | 0.0% | 43.4% | 0.9469 | 1 | -0.2938 | 0.7420 | 1 | 0.0% | 0 | 1 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Long Straddle / Strangle | 14 | 719 | 5 | 0.7% | 1 | 20.0% | 35.5% | -15.5% | 32.4% | 3.6% | 62.4% | 0.7651 | 1 | -0.4170 | 0.4722 | 1 | 20.0% | 0 | 1 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Long Straddle / Strangle | 30 | 703 | 5 | 0.7% | 1 | 20.0% | 45.0% | -25.0% | 40.0% | 3.6% | 62.4% | 0.8690 | 1 | -0.4750 | 0.1200 | 1 | 12.5% | 0 | 1 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Put Ratio Backspread 1×2 | 3 | 730 | 23 | 3.2% | 2 | 8.7% | 12.9% | -4.2% | 10.6% | 2.4% | 26.8% | 0.7253 | 1 | -1.5089 | 0.7226 | 6 | 7.9% | 1 | 2 | 0 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Put Ratio Backspread 1×2 | 7 | 726 | 23 | 3.2% | 2 | 8.7% | 9.1% | -0.4% | 8.9% | 2.4% | 26.8% | 0.5263 | 1 | -1.5892 | 0.4695 | 1 | 5.2% | 1 | 2 | 1 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Put Ratio Backspread 1×2 | 14 | 719 | 23 | 3.2% | 1 | 4.3% | 6.5% | -2.2% | 5.4% | 0.8% | 21.0% | 0.6645 | 1 | -1.5952 | 0.8635 | 1 | 4.2% | 0 | 2 | 1 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| Put Ratio Backspread 1×2 | 30 | 703 | 23 | 3.3% | 1 | 4.3% | 6.7% | -2.3% | 5.4% | 0.8% | 21.0% | 0.6732 | 1 | -1.6762 | 0.7341 | 1 | 5.0% | 0 | 2 | 1 | 2 | לא מספקת | market-scenario proxy; no option P&L | 0.9785 |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | 730 | 286 | 39.2% | 107 | 37.4% | 37.9% | -0.5% | 37.4% | 32.0% | 43.2% | 0.5736 | 1 | -0.3657 | 0.2446 | 94 | 37.4% | 1 | 4 | 0 | 3 | גבוהה | market-scenario proxy; no option P&L | 0.9785 |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | 726 | 286 | 39.4% | 92 | 32.2% | 36.5% | -4.3% | 32.5% | 27.0% | 37.8% | 0.9360 | 1 | -0.3161 | 0.3299 | 34 | 32.4% | 1 | 4 | 1 | 3 | גבוהה | market-scenario proxy; no option P&L | 0.9785 |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | 719 | 283 | 39.4% | 116 | 41.0% | 40.3% | 0.7% | 40.9% | 35.4% | 46.8% | 0.4111 | 1 | -0.2480 | 0.4657 | 14 | 41.8% | 2 | 4 | 1 | 3 | גבוהה | market-scenario proxy; no option P&L | 0.9785 |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | 703 | 282 | 40.1% | 98 | 34.8% | 37.4% | -2.7% | 34.9% | 29.4% | 40.5% | 0.8220 | 1 | -0.4190 | 0.7203 | 7 | 35.1% | 1 | 4 | 1 | 3 | גבוהה | market-scenario proxy; no option P&L | 0.9785 |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | 730 | 56 | 7.7% | 19 | 33.9% | 27.8% | 6.1% | 32.3% | 22.9% | 47.0% | 0.1533 | 3 | -0.4138 | 0.2675 | 17 | 33.4% | 3 | 4 | 3 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.9785 |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | 726 | 55 | 7.6% | 21 | 38.2% | 29.2% | 9.0% | 35.8% | 26.5% | 51.4% | 0.0715 | 3 | -0.3231 | 0.1148 | 5 | 40.6% | 3 | 4 | 3 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.7625 |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | 719 | 55 | 7.6% | 13 | 23.6% | 24.2% | -0.6% | 23.8% | 14.4% | 36.3% | 0.5389 | 1 | -0.5095 | 0.4307 | 2 | 22.2% | 2 | 4 | 2 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.9785 |
+| פרפר Put דובי / Broken-Wing Butterfly | 30 | 703 | 44 | 6.3% | 5 | 11.4% | 17.6% | -6.3% | 13.3% | 5.0% | 24.0% | 0.8626 | 1 | -1.0403 | 0.5358 | 1 | 11.4% | 0 | 3 | 1 | 3 | נמוכה | market-scenario proxy; no option P&L | 0.9785 |
 | פרפר הפוך / Long Iron Condor | 3 | 730 | 0 | 0.0% | 0 | — | 34.2% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
 | פרפר הפוך / Long Iron Condor | 7 | 726 | 0 | 0.0% | 0 | — | 34.3% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
 | פרפר הפוך / Long Iron Condor | 14 | 719 | 0 | 0.0% | 0 | — | 35.5% | — | — | — | — | — | 1 | — | — | 0 | — | 0 | 0 | 0 | 0 | לא מספקת | market-scenario proxy; no option P&L | — |
@@ -1536,383 +1538,282 @@ This document is a research knowledge base for recommendation calibration. It te
 
 | strategy | horizon | band_multiplier | selected_n | success_rate |
 | --- | --- | --- | --- | --- |
-| Bear Call Spread | 3 | 0.7500 | 57 | 42.1% |
-| Bear Call Spread | 3 | 1.0000 | 57 | 50.9% |
-| Bear Call Spread | 3 | 1.2500 | 57 | 56.1% |
-| Bear Call Spread | 7 | 0.7500 | 56 | 46.4% |
-| Bear Call Spread | 7 | 1.0000 | 56 | 51.8% |
-| Bear Call Spread | 7 | 1.2500 | 56 | 55.4% |
-| Bear Call Spread | 14 | 0.7500 | 55 | 41.8% |
-| Bear Call Spread | 14 | 1.0000 | 55 | 52.7% |
-| Bear Call Spread | 14 | 1.2500 | 55 | 56.4% |
-| Bear Call Spread | 30 | 0.7500 | 47 | 38.3% |
-| Bear Call Spread | 30 | 1.0000 | 47 | 44.7% |
-| Bear Call Spread | 30 | 1.2500 | 47 | 48.9% |
-| Bear Put Spread | 3 | 0.7500 | 36 | 36.1% |
-| Bear Put Spread | 3 | 1.0000 | 36 | 36.1% |
-| Bear Put Spread | 3 | 1.2500 | 36 | 36.1% |
-| Bear Put Spread | 7 | 0.7500 | 36 | 50.0% |
-| Bear Put Spread | 7 | 1.0000 | 36 | 50.0% |
-| Bear Put Spread | 7 | 1.2500 | 36 | 50.0% |
-| Bear Put Spread | 14 | 0.7500 | 35 | 42.9% |
-| Bear Put Spread | 14 | 1.0000 | 35 | 42.9% |
-| Bear Put Spread | 14 | 1.2500 | 35 | 42.9% |
-| Bear Put Spread | 30 | 0.7500 | 35 | 34.3% |
-| Bear Put Spread | 30 | 1.0000 | 35 | 34.3% |
-| Bear Put Spread | 30 | 1.2500 | 35 | 34.3% |
-| Bull Call Spread | 3 | 0.7500 | 65 | 61.5% |
-| Bull Call Spread | 3 | 1.0000 | 65 | 61.5% |
-| Bull Call Spread | 3 | 1.2500 | 65 | 61.5% |
-| Bull Call Spread | 7 | 0.7500 | 65 | 76.9% |
-| Bull Call Spread | 7 | 1.0000 | 65 | 76.9% |
-| Bull Call Spread | 7 | 1.2500 | 65 | 76.9% |
-| Bull Call Spread | 14 | 0.7500 | 65 | 70.8% |
-| Bull Call Spread | 14 | 1.0000 | 65 | 70.8% |
-| Bull Call Spread | 14 | 1.2500 | 65 | 70.8% |
-| Bull Call Spread | 30 | 0.7500 | 65 | 84.6% |
-| Bull Call Spread | 30 | 1.0000 | 65 | 84.6% |
-| Bull Call Spread | 30 | 1.2500 | 65 | 84.6% |
-| Bull Put Spread | 3 | 0.7500 | 156 | 63.5% |
-| Bull Put Spread | 3 | 1.0000 | 156 | 65.4% |
-| Bull Put Spread | 3 | 1.2500 | 156 | 69.9% |
-| Bull Put Spread | 7 | 0.7500 | 156 | 71.8% |
-| Bull Put Spread | 7 | 1.0000 | 156 | 73.7% |
-| Bull Put Spread | 7 | 1.2500 | 156 | 78.2% |
-| Bull Put Spread | 14 | 0.7500 | 155 | 75.5% |
-| Bull Put Spread | 14 | 1.0000 | 155 | 79.4% |
-| Bull Put Spread | 14 | 1.2500 | 155 | 84.5% |
-| Bull Put Spread | 30 | 0.7500 | 155 | 81.3% |
-| Bull Put Spread | 30 | 1.0000 | 155 | 82.6% |
-| Bull Put Spread | 30 | 1.2500 | 155 | 83.9% |
-| Call Ratio Backspread 1×2 | 3 | 0.7500 | 19 | 21.1% |
-| Call Ratio Backspread 1×2 | 3 | 1.0000 | 19 | 10.5% |
-| Call Ratio Backspread 1×2 | 3 | 1.2500 | 19 | 5.3% |
-| Call Ratio Backspread 1×2 | 7 | 0.7500 | 19 | 26.3% |
-| Call Ratio Backspread 1×2 | 7 | 1.0000 | 19 | 21.1% |
-| Call Ratio Backspread 1×2 | 7 | 1.2500 | 19 | 15.8% |
-| Call Ratio Backspread 1×2 | 14 | 0.7500 | 19 | 31.6% |
-| Call Ratio Backspread 1×2 | 14 | 1.0000 | 19 | 21.1% |
-| Call Ratio Backspread 1×2 | 14 | 1.2500 | 19 | 15.8% |
-| Call Ratio Backspread 1×2 | 30 | 0.7500 | 19 | 36.8% |
-| Call Ratio Backspread 1×2 | 30 | 1.0000 | 19 | 36.8% |
-| Call Ratio Backspread 1×2 | 30 | 1.2500 | 19 | 26.3% |
-| Iron Condor | 3 | 0.7500 | 18 | 55.6% |
-| Iron Condor | 3 | 1.0000 | 18 | 61.1% |
-| Iron Condor | 3 | 1.2500 | 18 | 61.1% |
-| Iron Condor | 7 | 0.7500 | 17 | 64.7% |
-| Iron Condor | 7 | 1.0000 | 17 | 64.7% |
-| Iron Condor | 7 | 1.2500 | 17 | 70.6% |
-| Iron Condor | 14 | 0.7500 | 17 | 47.1% |
-| Iron Condor | 14 | 1.0000 | 17 | 70.6% |
-| Iron Condor | 14 | 1.2500 | 17 | 82.4% |
-| Iron Condor | 30 | 0.7500 | 16 | 31.2% |
-| Iron Condor | 30 | 1.0000 | 16 | 37.5% |
-| Iron Condor | 30 | 1.2500 | 16 | 56.2% |
-| Long Butterfly / Condor קנוי | 3 | 0.7500 | 22 | 36.4% |
-| Long Butterfly / Condor קנוי | 3 | 1.0000 | 22 | 45.5% |
-| Long Butterfly / Condor קנוי | 3 | 1.2500 | 22 | 45.5% |
-| Long Butterfly / Condor קנוי | 7 | 0.7500 | 21 | 19.0% |
-| Long Butterfly / Condor קנוי | 7 | 1.0000 | 21 | 23.8% |
-| Long Butterfly / Condor קנוי | 7 | 1.2500 | 21 | 28.6% |
-| Long Butterfly / Condor קנוי | 14 | 0.7500 | 21 | 14.3% |
-| Long Butterfly / Condor קנוי | 14 | 1.0000 | 21 | 23.8% |
-| Long Butterfly / Condor קנוי | 14 | 1.2500 | 21 | 38.1% |
-| Long Butterfly / Condor קנוי | 30 | 0.7500 | 19 | 0.0% |
-| Long Butterfly / Condor קנוי | 30 | 1.0000 | 19 | 10.5% |
-| Long Butterfly / Condor קנוי | 30 | 1.2500 | 19 | 26.3% |
-| Long Straddle / Strangle | 3 | 0.7500 | 19 | 36.8% |
-| Long Straddle / Strangle | 3 | 1.0000 | 19 | 15.8% |
-| Long Straddle / Strangle | 3 | 1.2500 | 19 | 10.5% |
-| Long Straddle / Strangle | 7 | 0.7500 | 19 | 31.6% |
-| Long Straddle / Strangle | 7 | 1.0000 | 19 | 5.3% |
-| Long Straddle / Strangle | 7 | 1.2500 | 19 | 0.0% |
-| Long Straddle / Strangle | 14 | 0.7500 | 19 | 31.6% |
-| Long Straddle / Strangle | 14 | 1.0000 | 19 | 15.8% |
-| Long Straddle / Strangle | 14 | 1.2500 | 19 | 10.5% |
-| Long Straddle / Strangle | 30 | 0.7500 | 19 | 21.1% |
-| Long Straddle / Strangle | 30 | 1.0000 | 19 | 15.8% |
-| Long Straddle / Strangle | 30 | 1.2500 | 19 | 10.5% |
-| Put Ratio Backspread 1×2 | 3 | 0.7500 | 34 | 11.8% |
-| Put Ratio Backspread 1×2 | 3 | 1.0000 | 34 | 8.8% |
-| Put Ratio Backspread 1×2 | 3 | 1.2500 | 34 | 5.9% |
-| Put Ratio Backspread 1×2 | 7 | 0.7500 | 34 | 11.8% |
-| Put Ratio Backspread 1×2 | 7 | 1.0000 | 34 | 8.8% |
-| Put Ratio Backspread 1×2 | 7 | 1.2500 | 34 | 0.0% |
-| Put Ratio Backspread 1×2 | 14 | 0.7500 | 34 | 8.8% |
-| Put Ratio Backspread 1×2 | 14 | 1.0000 | 34 | 2.9% |
-| Put Ratio Backspread 1×2 | 14 | 1.2500 | 34 | 2.9% |
-| Put Ratio Backspread 1×2 | 30 | 0.7500 | 34 | 2.9% |
-| Put Ratio Backspread 1×2 | 30 | 1.0000 | 34 | 2.9% |
-| Put Ratio Backspread 1×2 | 30 | 1.2500 | 34 | 2.9% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | 0.7500 | 247 | 29.1% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | 1.0000 | 247 | 40.5% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | 1.2500 | 247 | 47.4% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | 0.7500 | 247 | 26.3% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | 1.0000 | 247 | 36.8% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | 1.2500 | 247 | 43.7% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | 0.7500 | 244 | 36.9% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | 1.0000 | 244 | 46.7% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | 1.2500 | 244 | 54.1% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | 0.7500 | 243 | 29.6% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | 1.0000 | 243 | 38.3% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | 1.2500 | 243 | 44.4% |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | 0.7500 | 27 | 33.3% |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | 1.0000 | 27 | 33.3% |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | 1.2500 | 27 | 37.0% |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | 0.7500 | 26 | 23.1% |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | 1.0000 | 26 | 30.8% |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | 1.2500 | 26 | 30.8% |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | 0.7500 | 26 | 19.2% |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | 1.0000 | 26 | 19.2% |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | 1.2500 | 26 | 19.2% |
-| פרפר Put דובי / Broken-Wing Butterfly | 30 | 0.7500 | 22 | 13.6% |
-| פרפר Put דובי / Broken-Wing Butterfly | 30 | 1.0000 | 22 | 18.2% |
-| פרפר Put דובי / Broken-Wing Butterfly | 30 | 1.2500 | 22 | 18.2% |
+| Bear Put Spread | 3 | 0.7500 | 75 | 33.3% |
+| Bear Put Spread | 3 | 1.0000 | 75 | 33.3% |
+| Bear Put Spread | 3 | 1.2500 | 75 | 33.3% |
+| Bear Put Spread | 7 | 0.7500 | 74 | 39.2% |
+| Bear Put Spread | 7 | 1.0000 | 74 | 39.2% |
+| Bear Put Spread | 7 | 1.2500 | 74 | 39.2% |
+| Bear Put Spread | 14 | 0.7500 | 72 | 40.3% |
+| Bear Put Spread | 14 | 1.0000 | 72 | 40.3% |
+| Bear Put Spread | 14 | 1.2500 | 72 | 40.3% |
+| Bear Put Spread | 30 | 0.7500 | 71 | 38.0% |
+| Bear Put Spread | 30 | 1.0000 | 71 | 38.0% |
+| Bear Put Spread | 30 | 1.2500 | 71 | 38.0% |
+| Bull Call Spread | 3 | 0.7500 | 195 | 57.9% |
+| Bull Call Spread | 3 | 1.0000 | 195 | 57.9% |
+| Bull Call Spread | 3 | 1.2500 | 195 | 57.9% |
+| Bull Call Spread | 7 | 0.7500 | 195 | 63.1% |
+| Bull Call Spread | 7 | 1.0000 | 195 | 63.1% |
+| Bull Call Spread | 7 | 1.2500 | 195 | 63.1% |
+| Bull Call Spread | 14 | 0.7500 | 194 | 67.0% |
+| Bull Call Spread | 14 | 1.0000 | 194 | 67.0% |
+| Bull Call Spread | 14 | 1.2500 | 194 | 67.0% |
+| Bull Call Spread | 30 | 0.7500 | 194 | 74.7% |
+| Bull Call Spread | 30 | 1.0000 | 194 | 74.7% |
+| Bull Call Spread | 30 | 1.2500 | 194 | 74.7% |
+| Call Ratio Backspread 1×2 | 3 | 0.7500 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 3 | 1.0000 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 3 | 1.2500 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 7 | 0.7500 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 7 | 1.0000 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 7 | 1.2500 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 14 | 0.7500 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 14 | 1.0000 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 14 | 1.2500 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 30 | 0.7500 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 30 | 1.0000 | 6 | 0.0% |
+| Call Ratio Backspread 1×2 | 30 | 1.2500 | 6 | 0.0% |
+| Long Butterfly / Condor קנוי | 3 | 0.7500 | 32 | 34.4% |
+| Long Butterfly / Condor קנוי | 3 | 1.0000 | 32 | 40.6% |
+| Long Butterfly / Condor קנוי | 3 | 1.2500 | 32 | 40.6% |
+| Long Butterfly / Condor קנוי | 7 | 0.7500 | 31 | 32.3% |
+| Long Butterfly / Condor קנוי | 7 | 1.0000 | 31 | 35.5% |
+| Long Butterfly / Condor קנוי | 7 | 1.2500 | 31 | 41.9% |
+| Long Butterfly / Condor קנוי | 14 | 0.7500 | 31 | 19.4% |
+| Long Butterfly / Condor קנוי | 14 | 1.0000 | 31 | 29.0% |
+| Long Butterfly / Condor קנוי | 14 | 1.2500 | 31 | 35.5% |
+| Long Butterfly / Condor קנוי | 30 | 0.7500 | 28 | 7.1% |
+| Long Butterfly / Condor קנוי | 30 | 1.0000 | 28 | 14.3% |
+| Long Butterfly / Condor קנוי | 30 | 1.2500 | 28 | 21.4% |
+| Long Straddle / Strangle | 3 | 0.7500 | 5 | 0.0% |
+| Long Straddle / Strangle | 3 | 1.0000 | 5 | 0.0% |
+| Long Straddle / Strangle | 3 | 1.2500 | 5 | 0.0% |
+| Long Straddle / Strangle | 7 | 0.7500 | 5 | 40.0% |
+| Long Straddle / Strangle | 7 | 1.0000 | 5 | 0.0% |
+| Long Straddle / Strangle | 7 | 1.2500 | 5 | 0.0% |
+| Long Straddle / Strangle | 14 | 0.7500 | 5 | 20.0% |
+| Long Straddle / Strangle | 14 | 1.0000 | 5 | 20.0% |
+| Long Straddle / Strangle | 14 | 1.2500 | 5 | 20.0% |
+| Long Straddle / Strangle | 30 | 0.7500 | 5 | 40.0% |
+| Long Straddle / Strangle | 30 | 1.0000 | 5 | 20.0% |
+| Long Straddle / Strangle | 30 | 1.2500 | 5 | 20.0% |
+| Put Ratio Backspread 1×2 | 3 | 0.7500 | 23 | 13.0% |
+| Put Ratio Backspread 1×2 | 3 | 1.0000 | 23 | 8.7% |
+| Put Ratio Backspread 1×2 | 3 | 1.2500 | 23 | 4.3% |
+| Put Ratio Backspread 1×2 | 7 | 0.7500 | 23 | 8.7% |
+| Put Ratio Backspread 1×2 | 7 | 1.0000 | 23 | 8.7% |
+| Put Ratio Backspread 1×2 | 7 | 1.2500 | 23 | 0.0% |
+| Put Ratio Backspread 1×2 | 14 | 0.7500 | 23 | 8.7% |
+| Put Ratio Backspread 1×2 | 14 | 1.0000 | 23 | 4.3% |
+| Put Ratio Backspread 1×2 | 14 | 1.2500 | 23 | 4.3% |
+| Put Ratio Backspread 1×2 | 30 | 0.7500 | 23 | 4.3% |
+| Put Ratio Backspread 1×2 | 30 | 1.0000 | 23 | 4.3% |
+| Put Ratio Backspread 1×2 | 30 | 1.2500 | 23 | 4.3% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | 0.7500 | 286 | 27.6% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | 1.0000 | 286 | 37.4% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | 1.2500 | 286 | 43.0% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | 0.7500 | 286 | 23.1% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | 1.0000 | 286 | 32.2% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | 1.2500 | 286 | 40.2% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | 0.7500 | 283 | 30.7% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | 1.0000 | 283 | 41.0% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | 1.2500 | 283 | 48.1% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | 0.7500 | 282 | 26.6% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | 1.0000 | 282 | 34.8% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | 1.2500 | 282 | 42.2% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | 0.7500 | 56 | 30.4% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | 1.0000 | 56 | 33.9% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | 1.2500 | 56 | 35.7% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | 0.7500 | 55 | 34.5% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | 1.0000 | 55 | 38.2% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | 1.2500 | 55 | 38.2% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | 0.7500 | 55 | 23.6% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | 1.0000 | 55 | 23.6% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | 1.2500 | 55 | 23.6% |
+| פרפר Put דובי / Broken-Wing Butterfly | 30 | 0.7500 | 44 | 9.1% |
+| פרפר Put דובי / Broken-Wing Butterfly | 30 | 1.0000 | 44 | 11.4% |
+| פרפר Put דובי / Broken-Wing Butterfly | 30 | 1.2500 | 44 | 11.4% |
 
 ## Strategy robustness by market regime
 
 | strategy | horizon | regime | selected_n | success_rate | unconditional_baseline | uplift |
 | --- | --- | --- | --- | --- | --- | --- |
-| Bear Call Spread | 3 | רגוע | 18 | 50.0% | 60.9% | -10.9% |
-| Bear Call Spread | 3 | רגיל | 39 | 51.3% | 57.1% | -5.8% |
-| Bear Call Spread | 7 | רגוע | 18 | 44.4% | 60.6% | -16.2% |
-| Bear Call Spread | 7 | רגיל | 38 | 55.3% | 54.5% | 0.8% |
-| Bear Call Spread | 14 | רגוע | 18 | 44.4% | 50.7% | -6.3% |
-| Bear Call Spread | 14 | רגיל | 37 | 56.8% | 49.7% | 7.1% |
-| Bear Call Spread | 30 | רגוע | 15 | 46.7% | 43.4% | 3.3% |
-| Bear Call Spread | 30 | רגיל | 32 | 43.8% | 41.4% | 2.3% |
-| Bear Put Spread | 3 | זהירות | 17 | 29.4% | 46.5% | -17.1% |
-| Bear Put Spread | 3 | לחץ גבוה | 7 | 42.9% | 38.5% | 4.4% |
-| Bear Put Spread | 3 | רגיל | 9 | 55.6% | 38.0% | 17.6% |
-| Bear Put Spread | 7 | זהירות | 17 | 52.9% | 36.4% | 16.6% |
-| Bear Put Spread | 7 | לחץ גבוה | 7 | 57.1% | 35.9% | 21.2% |
-| Bear Put Spread | 7 | רגיל | 9 | 55.6% | 36.2% | 19.3% |
-| Bear Put Spread | 14 | זהירות | 16 | 31.2% | 35.4% | -4.2% |
-| Bear Put Spread | 14 | לחץ גבוה | 7 | 71.4% | 33.3% | 38.1% |
-| Bear Put Spread | 14 | רגיל | 9 | 55.6% | 30.9% | 24.7% |
-| Bear Put Spread | 30 | זהירות | 16 | 25.0% | 18.7% | 6.3% |
-| Bear Put Spread | 30 | לחץ גבוה | 7 | 42.9% | 23.1% | 19.8% |
-| Bear Put Spread | 30 | רגיל | 9 | 44.4% | 23.6% | 20.8% |
-| Bull Call Spread | 3 | זהירות | 28 | 60.7% | 53.5% | 7.2% |
-| Bull Call Spread | 3 | לחץ גבוה | 6 | 50.0% | 61.5% | -11.5% |
-| Bull Call Spread | 3 | רגוע | 7 | 71.4% | 58.1% | 13.3% |
-| Bull Call Spread | 3 | רגיל | 24 | 62.5% | 62.0% | 0.5% |
-| Bull Call Spread | 7 | זהירות | 28 | 75.0% | 63.6% | 11.4% |
-| Bull Call Spread | 7 | לחץ גבוה | 6 | 66.7% | 64.1% | 2.6% |
-| Bull Call Spread | 7 | רגוע | 7 | 100.0% | 58.5% | 41.5% |
-| Bull Call Spread | 7 | רגיל | 24 | 75.0% | 63.8% | 11.2% |
-| Bull Call Spread | 14 | זהירות | 28 | 64.3% | 64.6% | -0.3% |
-| Bull Call Spread | 14 | לחץ גבוה | 6 | 50.0% | 66.7% | -16.7% |
-| Bull Call Spread | 14 | רגוע | 7 | 85.7% | 71.3% | 14.4% |
-| Bull Call Spread | 14 | רגיל | 24 | 79.2% | 69.1% | 10.0% |
-| Bull Call Spread | 30 | זהירות | 28 | 82.1% | 81.3% | 0.8% |
-| Bull Call Spread | 30 | לחץ גבוה | 6 | 83.3% | 76.9% | 6.4% |
-| Bull Call Spread | 30 | רגוע | 7 | 85.7% | 73.0% | 12.8% |
-| Bull Call Spread | 30 | רגיל | 24 | 87.5% | 76.4% | 11.1% |
-| Bull Put Spread | 3 | רגוע | 82 | 54.9% | 74.0% | -19.2% |
-| Bull Put Spread | 3 | רגיל | 74 | 77.0% | 77.9% | -0.9% |
-| Bull Put Spread | 7 | רגוע | 82 | 68.3% | 80.1% | -11.8% |
-| Bull Put Spread | 7 | רגיל | 74 | 79.7% | 78.1% | 1.7% |
-| Bull Put Spread | 14 | רגוע | 81 | 77.8% | 86.0% | -8.2% |
-| Bull Put Spread | 14 | רגיל | 74 | 81.1% | 83.9% | -2.8% |
-| Bull Put Spread | 30 | רגוע | 81 | 75.3% | 86.5% | -11.2% |
-| Bull Put Spread | 30 | רגיל | 74 | 90.5% | 91.1% | -0.6% |
-| Call Ratio Backspread 1×2 | 3 | זהירות | 7 | 14.3% | 19.2% | -4.9% |
-| Call Ratio Backspread 1×2 | 3 | רגיל | 9 | 0.0% | 19.5% | -19.5% |
-| Call Ratio Backspread 1×2 | 7 | זהירות | 7 | 14.3% | 23.2% | -8.9% |
-| Call Ratio Backspread 1×2 | 7 | רגיל | 9 | 22.2% | 24.9% | -2.7% |
-| Call Ratio Backspread 1×2 | 14 | זהירות | 7 | 14.3% | 27.1% | -12.8% |
-| Call Ratio Backspread 1×2 | 14 | רגיל | 9 | 22.2% | 30.5% | -8.3% |
-| Call Ratio Backspread 1×2 | 30 | זהירות | 7 | 14.3% | 33.0% | -18.7% |
-| Call Ratio Backspread 1×2 | 30 | רגיל | 9 | 55.6% | 42.1% | 13.4% |
-| Iron Condor | 3 | רגוע | 10 | 60.0% | 62.3% | -2.3% |
-| Iron Condor | 3 | רגיל | 8 | 62.5% | 70.3% | -7.8% |
-| Iron Condor | 7 | רגוע | 9 | 55.6% | 63.1% | -7.5% |
-| Iron Condor | 7 | רגיל | 8 | 75.0% | 68.8% | 6.2% |
-| Iron Condor | 14 | רגוע | 9 | 66.7% | 65.0% | 1.6% |
-| Iron Condor | 14 | רגיל | 8 | 75.0% | 62.4% | 12.6% |
-| Iron Condor | 30 | רגוע | 8 | 25.0% | 54.1% | -29.1% |
-| Iron Condor | 30 | רגיל | 8 | 50.0% | 51.7% | -1.7% |
-| Long Butterfly / Condor קנוי | 3 | רגוע | 12 | 33.3% | 34.9% | -1.6% |
-| Long Butterfly / Condor קנוי | 3 | רגיל | 8 | 62.5% | 35.0% | 27.5% |
-| Long Butterfly / Condor קנוי | 7 | רגוע | 12 | 41.7% | 40.8% | 0.9% |
-| Long Butterfly / Condor קנוי | 7 | רגיל | 7 | 0.0% | 32.6% | -32.6% |
-| Long Butterfly / Condor קנוי | 14 | רגוע | 12 | 0.0% | 36.7% | -36.7% |
-| Long Butterfly / Condor קנוי | 14 | רגיל | 7 | 57.1% | 33.6% | 23.6% |
-| Long Butterfly / Condor קנוי | 30 | רגוע | 12 | 8.3% | 29.9% | -21.6% |
-| Long Butterfly / Condor קנוי | 30 | רגיל | 6 | 16.7% | 32.5% | -15.9% |
-| Long Straddle / Strangle | 3 | זהירות | 5 | 0.0% | 31.3% | -31.3% |
-| Long Straddle / Strangle | 3 | רגוע | 5 | 0.0% | 37.7% | -37.7% |
-| Long Straddle / Strangle | 3 | רגיל | 8 | 25.0% | 29.7% | -4.7% |
-| Long Straddle / Strangle | 7 | זהירות | 5 | 0.0% | 30.3% | -30.3% |
-| Long Straddle / Strangle | 7 | רגוע | 5 | 0.0% | 36.9% | -36.9% |
-| Long Straddle / Strangle | 7 | רגיל | 8 | 12.5% | 31.2% | -18.7% |
-| Long Straddle / Strangle | 14 | זהירות | 5 | 0.0% | 32.3% | -32.3% |
-| Long Straddle / Strangle | 14 | רגוע | 5 | 0.0% | 35.0% | -35.0% |
-| Long Straddle / Strangle | 14 | רגיל | 8 | 37.5% | 37.6% | -0.1% |
-| Long Straddle / Strangle | 30 | זהירות | 5 | 0.0% | 39.6% | -39.6% |
-| Long Straddle / Strangle | 30 | רגוע | 5 | 0.0% | 45.9% | -45.9% |
-| Long Straddle / Strangle | 30 | רגיל | 8 | 37.5% | 48.3% | -10.8% |
-| Put Ratio Backspread 1×2 | 3 | זהירות | 10 | 0.0% | 12.1% | -12.1% |
-| Put Ratio Backspread 1×2 | 3 | לחץ גבוה | 16 | 12.5% | 17.9% | -5.4% |
-| Put Ratio Backspread 1×2 | 3 | רגיל | 8 | 12.5% | 10.2% | 2.3% |
-| Put Ratio Backspread 1×2 | 7 | זהירות | 10 | 20.0% | 7.1% | 12.9% |
-| Put Ratio Backspread 1×2 | 7 | לחץ גבוה | 16 | 6.2% | 15.4% | -9.1% |
-| Put Ratio Backspread 1×2 | 7 | רגיל | 8 | 0.0% | 6.3% | -6.3% |
-| Put Ratio Backspread 1×2 | 14 | זהירות | 10 | 0.0% | 5.2% | -5.2% |
-| Put Ratio Backspread 1×2 | 14 | לחץ גבוה | 16 | 6.2% | 5.1% | 1.1% |
-| Put Ratio Backspread 1×2 | 14 | רגיל | 8 | 0.0% | 7.0% | -7.0% |
-| Put Ratio Backspread 1×2 | 30 | זהירות | 10 | 0.0% | 6.6% | -6.6% |
-| Put Ratio Backspread 1×2 | 30 | לחץ גבוה | 16 | 6.2% | 5.1% | 1.1% |
-| Put Ratio Backspread 1×2 | 30 | רגיל | 8 | 0.0% | 6.2% | -6.2% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | זהירות | 11 | 27.3% | 34.3% | -7.1% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | רגוע | 137 | 40.1% | 35.6% | 4.5% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | רגיל | 99 | 42.4% | 42.6% | -0.2% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | זהירות | 11 | 54.5% | 40.4% | 14.1% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | רגוע | 137 | 34.3% | 33.4% | 0.9% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | רגיל | 99 | 38.4% | 38.9% | -0.5% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | זהירות | 10 | 40.0% | 37.5% | 2.5% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | רגוע | 137 | 46.7% | 43.0% | 3.7% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | רגיל | 97 | 47.4% | 38.6% | 8.8% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | זהירות | 10 | 60.0% | 48.4% | 11.6% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | רגוע | 136 | 37.5% | 34.5% | 3.0% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | רגיל | 97 | 37.1% | 34.2% | 2.9% |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | זהירות | 13 | 46.2% | 34.3% | 11.8% |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | רגוע | 6 | 33.3% | 26.6% | 6.7% |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | רגיל | 7 | 14.3% | 27.7% | -13.4% |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | זהירות | 13 | 46.2% | 29.3% | 16.9% |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | רגוע | 5 | 20.0% | 29.6% | -9.6% |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | רגיל | 7 | 14.3% | 29.9% | -15.6% |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | זהירות | 13 | 30.8% | 30.2% | 0.6% |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | רגוע | 5 | 0.0% | 22.0% | -22.0% |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | רגיל | 7 | 14.3% | 23.8% | -9.5% |
+| Bear Put Spread | 3 | זהירות | 23 | 30.4% | 46.5% | -16.0% |
+| Bear Put Spread | 3 | לחץ גבוה | 9 | 44.4% | 38.5% | 6.0% |
+| Bear Put Spread | 3 | רגוע | 7 | 28.6% | 41.9% | -13.3% |
+| Bear Put Spread | 3 | רגיל | 36 | 33.3% | 38.0% | -4.6% |
+| Bear Put Spread | 7 | זהירות | 23 | 52.2% | 36.4% | 15.8% |
+| Bear Put Spread | 7 | לחץ גבוה | 9 | 55.6% | 35.9% | 19.7% |
+| Bear Put Spread | 7 | רגוע | 7 | 0.0% | 41.5% | -41.5% |
+| Bear Put Spread | 7 | רגיל | 35 | 34.3% | 36.2% | -1.9% |
+| Bear Put Spread | 14 | זהירות | 22 | 36.4% | 35.4% | 0.9% |
+| Bear Put Spread | 14 | לחץ גבוה | 9 | 66.7% | 33.3% | 33.3% |
+| Bear Put Spread | 14 | רגוע | 7 | 0.0% | 28.7% | -28.7% |
+| Bear Put Spread | 14 | רגיל | 34 | 44.1% | 30.9% | 13.2% |
+| Bear Put Spread | 30 | זהירות | 21 | 23.8% | 18.7% | 5.1% |
+| Bear Put Spread | 30 | לחץ גבוה | 9 | 44.4% | 23.1% | 21.4% |
+| Bear Put Spread | 30 | רגוע | 7 | 42.9% | 27.0% | 15.8% |
+| Bear Put Spread | 30 | רגיל | 34 | 44.1% | 23.6% | 20.5% |
+| Bull Call Spread | 3 | זהירות | 37 | 62.2% | 53.5% | 8.6% |
+| Bull Call Spread | 3 | לחץ גבוה | 7 | 57.1% | 61.5% | -4.4% |
+| Bull Call Spread | 3 | רגוע | 62 | 50.0% | 58.1% | -8.1% |
+| Bull Call Spread | 3 | רגיל | 89 | 61.8% | 62.0% | -0.2% |
+| Bull Call Spread | 7 | זהירות | 37 | 73.0% | 63.6% | 9.3% |
+| Bull Call Spread | 7 | לחץ גבוה | 7 | 71.4% | 64.1% | 7.3% |
+| Bull Call Spread | 7 | רגוע | 62 | 41.9% | 58.5% | -16.6% |
+| Bull Call Spread | 7 | רגיל | 89 | 73.0% | 63.8% | 9.2% |
+| Bull Call Spread | 14 | זהירות | 37 | 67.6% | 64.6% | 3.0% |
+| Bull Call Spread | 14 | לחץ גבוה | 7 | 57.1% | 66.7% | -9.5% |
+| Bull Call Spread | 14 | רגוע | 61 | 54.1% | 71.3% | -17.2% |
+| Bull Call Spread | 14 | רגיל | 89 | 76.4% | 69.1% | 7.3% |
+| Bull Call Spread | 30 | זהירות | 37 | 86.5% | 81.3% | 5.2% |
+| Bull Call Spread | 30 | לחץ גבוה | 7 | 85.7% | 76.9% | 8.8% |
+| Bull Call Spread | 30 | רגוע | 61 | 57.4% | 73.0% | -15.6% |
+| Bull Call Spread | 30 | רגיל | 89 | 80.9% | 76.4% | 4.5% |
+| Long Butterfly / Condor קנוי | 3 | רגוע | 19 | 31.6% | 34.9% | -3.4% |
+| Long Butterfly / Condor קנוי | 3 | רגיל | 11 | 54.5% | 35.0% | 19.6% |
+| Long Butterfly / Condor קנוי | 7 | רגוע | 18 | 44.4% | 40.8% | 3.7% |
+| Long Butterfly / Condor קנוי | 7 | רגיל | 11 | 27.3% | 32.6% | -5.3% |
+| Long Butterfly / Condor קנוי | 14 | רגוע | 18 | 11.1% | 36.7% | -25.6% |
+| Long Butterfly / Condor קנוי | 14 | רגיל | 11 | 54.5% | 33.6% | 21.0% |
+| Long Butterfly / Condor קנוי | 30 | רגוע | 17 | 11.8% | 29.9% | -18.1% |
+| Long Butterfly / Condor קנוי | 30 | רגיל | 10 | 20.0% | 32.5% | -12.5% |
+| Put Ratio Backspread 1×2 | 3 | זהירות | 5 | 0.0% | 12.1% | -12.1% |
+| Put Ratio Backspread 1×2 | 3 | לחץ גבוה | 14 | 7.1% | 17.9% | -10.8% |
+| Put Ratio Backspread 1×2 | 7 | זהירות | 5 | 40.0% | 7.1% | 32.9% |
+| Put Ratio Backspread 1×2 | 7 | לחץ גבוה | 14 | 0.0% | 15.4% | -15.4% |
+| Put Ratio Backspread 1×2 | 14 | זהירות | 5 | 0.0% | 5.2% | -5.2% |
+| Put Ratio Backspread 1×2 | 14 | לחץ גבוה | 14 | 7.1% | 5.1% | 2.0% |
+| Put Ratio Backspread 1×2 | 30 | זהירות | 5 | 0.0% | 6.6% | -6.6% |
+| Put Ratio Backspread 1×2 | 30 | לחץ גבוה | 14 | 7.1% | 5.1% | 2.0% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | זהירות | 6 | 33.3% | 34.3% | -1.0% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | רגוע | 165 | 34.5% | 35.6% | -1.1% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | רגיל | 115 | 41.7% | 42.6% | -0.8% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | זהירות | 6 | 50.0% | 40.4% | 9.6% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | רגוע | 165 | 31.5% | 33.4% | -1.9% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | רגיל | 115 | 32.2% | 38.9% | -6.7% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | זהירות | 5 | 20.0% | 37.5% | -17.5% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | רגוע | 165 | 43.6% | 43.0% | 0.6% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | רגיל | 113 | 38.1% | 38.6% | -0.5% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | זהירות | 5 | 40.0% | 48.4% | -8.4% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | רגוע | 164 | 34.1% | 34.5% | -0.4% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | רגיל | 113 | 35.4% | 34.2% | 1.2% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | זהירות | 12 | 50.0% | 34.3% | 15.7% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | רגוע | 20 | 30.0% | 26.6% | 3.4% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | רגיל | 23 | 30.4% | 27.7% | 2.7% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | זהירות | 12 | 41.7% | 29.3% | 12.4% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | רגוע | 19 | 36.8% | 29.6% | 7.2% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | רגיל | 23 | 39.1% | 29.9% | 9.2% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | זהירות | 12 | 33.3% | 30.2% | 3.1% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | רגוע | 19 | 5.3% | 22.0% | -16.8% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | רגיל | 23 | 34.8% | 23.8% | 11.0% |
 | פרפר Put דובי / Broken-Wing Butterfly | 30 | זהירות | 9 | 33.3% | 12.1% | 21.2% |
-| פרפר Put דובי / Broken-Wing Butterfly | 30 | רגוע | 5 | 20.0% | 19.6% | 0.4% |
-| פרפר Put דובי / Broken-Wing Butterfly | 30 | רגיל | 7 | 0.0% | 17.5% | -17.5% |
+| פרפר Put דובי / Broken-Wing Butterfly | 30 | רגוע | 16 | 6.2% | 19.6% | -13.3% |
+| פרפר Put דובי / Broken-Wing Butterfly | 30 | רגיל | 18 | 5.6% | 17.5% | -11.9% |
 
 ## Strategy robustness by calendar year
 
 | strategy | horizon | year | selected_n | success_rate | unconditional_baseline | uplift |
 | --- | --- | --- | --- | --- | --- | --- |
-| Bear Call Spread | 3 | 2,023 | 11 | 72.7% | 63.5% | 9.2% |
-| Bear Call Spread | 3 | 2,024 | 24 | 50.0% | 59.6% | -9.6% |
-| Bear Call Spread | 3 | 2,025 | 9 | 55.6% | 52.0% | 3.5% |
-| Bear Call Spread | 3 | 2,026 | 13 | 30.8% | 65.7% | -35.0% |
-| Bear Call Spread | 7 | 2,023 | 11 | 81.8% | 70.8% | 11.0% |
-| Bear Call Spread | 7 | 2,024 | 24 | 41.7% | 56.7% | -15.1% |
-| Bear Call Spread | 7 | 2,025 | 9 | 55.6% | 50.0% | 5.6% |
-| Bear Call Spread | 7 | 2,026 | 12 | 41.7% | 61.9% | -20.2% |
-| Bear Call Spread | 14 | 2,023 | 11 | 90.9% | 60.4% | 30.5% |
-| Bear Call Spread | 14 | 2,024 | 24 | 33.3% | 46.5% | -13.2% |
-| Bear Call Spread | 14 | 2,025 | 9 | 33.3% | 43.1% | -9.8% |
-| Bear Call Spread | 14 | 2,026 | 11 | 72.7% | 64.4% | 8.3% |
-| Bear Call Spread | 30 | 2,023 | 11 | 81.8% | 56.2% | 25.6% |
-| Bear Call Spread | 30 | 2,024 | 24 | 16.7% | 41.6% | -25.0% |
-| Bear Call Spread | 30 | 2,025 | 9 | 55.6% | 31.7% | 23.8% |
-| Bear Put Spread | 3 | 2,023 | 8 | 50.0% | 46.9% | 3.1% |
-| Bear Put Spread | 3 | 2,024 | 6 | 0.0% | 40.0% | -40.0% |
-| Bear Put Spread | 3 | 2,025 | 10 | 40.0% | 35.0% | 5.0% |
-| Bear Put Spread | 3 | 2,026 | 12 | 41.7% | 47.6% | -5.9% |
-| Bear Put Spread | 7 | 2,023 | 8 | 75.0% | 43.8% | 31.2% |
-| Bear Put Spread | 7 | 2,024 | 6 | 50.0% | 39.6% | 10.4% |
-| Bear Put Spread | 7 | 2,025 | 10 | 30.0% | 31.3% | -1.3% |
-| Bear Put Spread | 7 | 2,026 | 12 | 50.0% | 44.6% | 5.4% |
-| Bear Put Spread | 14 | 2,023 | 8 | 37.5% | 38.5% | -1.0% |
-| Bear Put Spread | 14 | 2,024 | 6 | 16.7% | 29.0% | -12.3% |
-| Bear Put Spread | 14 | 2,025 | 10 | 30.0% | 24.0% | 6.0% |
-| Bear Put Spread | 14 | 2,026 | 11 | 72.7% | 40.9% | 31.8% |
-| Bear Put Spread | 30 | 2,023 | 8 | 12.5% | 44.8% | -32.3% |
-| Bear Put Spread | 30 | 2,024 | 6 | 16.7% | 12.7% | 4.0% |
-| Bear Put Spread | 30 | 2,025 | 10 | 20.0% | 17.9% | 2.1% |
-| Bear Put Spread | 30 | 2,026 | 11 | 72.7% | 45.7% | 27.0% |
-| Bull Call Spread | 3 | 2,024 | 17 | 64.7% | 60.0% | 4.7% |
-| Bull Call Spread | 3 | 2,025 | 35 | 65.7% | 65.0% | 0.7% |
-| Bull Call Spread | 3 | 2,026 | 10 | 40.0% | 52.4% | -12.4% |
-| Bull Call Spread | 7 | 2,024 | 17 | 64.7% | 60.4% | 4.3% |
-| Bull Call Spread | 7 | 2,025 | 35 | 85.7% | 68.7% | 17.0% |
-| Bull Call Spread | 7 | 2,026 | 10 | 80.0% | 55.4% | 24.6% |
-| Bull Call Spread | 14 | 2,024 | 17 | 58.8% | 71.0% | -12.2% |
-| Bull Call Spread | 14 | 2,025 | 35 | 85.7% | 76.0% | 9.7% |
-| Bull Call Spread | 14 | 2,026 | 10 | 60.0% | 59.1% | 0.9% |
-| Bull Call Spread | 30 | 2,024 | 17 | 82.4% | 87.3% | -5.0% |
-| Bull Call Spread | 30 | 2,025 | 35 | 88.6% | 82.1% | 6.5% |
-| Bull Call Spread | 30 | 2,026 | 10 | 100.0% | 54.3% | 45.7% |
-| Bull Put Spread | 3 | 2,023 | 19 | 63.2% | 78.1% | -15.0% |
-| Bull Put Spread | 3 | 2,024 | 66 | 68.2% | 75.9% | -7.7% |
-| Bull Put Spread | 3 | 2,025 | 45 | 55.6% | 76.4% | -20.9% |
-| Bull Put Spread | 3 | 2,026 | 26 | 76.9% | 74.1% | 2.8% |
-| Bull Put Spread | 7 | 2,023 | 19 | 78.9% | 84.4% | -5.4% |
-| Bull Put Spread | 7 | 2,024 | 66 | 74.2% | 77.1% | -2.9% |
-| Bull Put Spread | 7 | 2,025 | 45 | 62.2% | 81.3% | -19.1% |
-| Bull Put Spread | 7 | 2,026 | 26 | 88.5% | 75.5% | 12.9% |
-| Bull Put Spread | 14 | 2,023 | 19 | 68.4% | 79.2% | -10.7% |
-| Bull Put Spread | 14 | 2,024 | 66 | 77.3% | 84.5% | -7.2% |
-| Bull Put Spread | 14 | 2,025 | 45 | 84.4% | 88.2% | -3.8% |
-| Bull Put Spread | 14 | 2,026 | 25 | 84.0% | 82.6% | 1.4% |
-| Bull Put Spread | 30 | 2,023 | 19 | 26.3% | 67.7% | -41.4% |
-| Bull Put Spread | 30 | 2,024 | 66 | 95.5% | 98.0% | -2.5% |
-| Bull Put Spread | 30 | 2,025 | 45 | 86.7% | 93.9% | -7.2% |
-| Bull Put Spread | 30 | 2,026 | 25 | 84.0% | 80.2% | 3.8% |
-| Call Ratio Backspread 1×2 | 3 | 2,025 | 10 | 20.0% | 24.4% | -4.4% |
-| Call Ratio Backspread 1×2 | 3 | 2,026 | 6 | 0.0% | 19.6% | -19.6% |
-| Call Ratio Backspread 1×2 | 7 | 2,025 | 10 | 30.0% | 31.3% | -1.3% |
-| Call Ratio Backspread 1×2 | 7 | 2,026 | 6 | 16.7% | 17.3% | -0.6% |
-| Call Ratio Backspread 1×2 | 14 | 2,025 | 10 | 30.0% | 37.0% | -7.0% |
-| Call Ratio Backspread 1×2 | 14 | 2,026 | 6 | 0.0% | 14.4% | -14.4% |
-| Call Ratio Backspread 1×2 | 30 | 2,025 | 10 | 40.0% | 56.1% | -16.1% |
-| Call Ratio Backspread 1×2 | 30 | 2,026 | 6 | 33.3% | 20.7% | 12.6% |
-| Iron Condor | 3 | 2,024 | 14 | 71.4% | 65.3% | 6.1% |
-| Iron Condor | 7 | 2,024 | 14 | 71.4% | 65.7% | 5.7% |
-| Iron Condor | 14 | 2,024 | 14 | 71.4% | 60.0% | 11.4% |
-| Iron Condor | 30 | 2,024 | 14 | 35.7% | 62.9% | -27.1% |
-| Long Butterfly / Condor קנוי | 3 | 2,023 | 7 | 42.9% | 41.7% | 1.2% |
+| Bear Put Spread | 3 | 2,023 | 13 | 69.2% | 46.9% | 22.4% |
+| Bear Put Spread | 3 | 2,024 | 20 | 15.0% | 40.0% | -25.0% |
+| Bear Put Spread | 3 | 2,025 | 18 | 27.8% | 35.0% | -7.2% |
+| Bear Put Spread | 3 | 2,026 | 24 | 33.3% | 47.6% | -14.2% |
+| Bear Put Spread | 7 | 2,023 | 13 | 69.2% | 43.8% | 25.5% |
+| Bear Put Spread | 7 | 2,024 | 20 | 20.0% | 39.6% | -19.6% |
+| Bear Put Spread | 7 | 2,025 | 18 | 16.7% | 31.3% | -14.6% |
+| Bear Put Spread | 7 | 2,026 | 23 | 56.5% | 44.6% | 11.9% |
+| Bear Put Spread | 14 | 2,023 | 13 | 53.8% | 38.5% | 15.3% |
+| Bear Put Spread | 14 | 2,024 | 20 | 5.0% | 29.0% | -24.0% |
+| Bear Put Spread | 14 | 2,025 | 18 | 27.8% | 24.0% | 3.8% |
+| Bear Put Spread | 14 | 2,026 | 21 | 76.2% | 40.9% | 35.3% |
+| Bear Put Spread | 30 | 2,023 | 13 | 38.5% | 44.8% | -6.3% |
+| Bear Put Spread | 30 | 2,024 | 20 | 15.0% | 12.7% | 2.3% |
+| Bear Put Spread | 30 | 2,025 | 18 | 22.2% | 17.9% | 4.3% |
+| Bear Put Spread | 30 | 2,026 | 20 | 75.0% | 45.7% | 29.3% |
+| Bull Call Spread | 3 | 2,023 | 13 | 53.8% | 53.1% | 0.7% |
+| Bull Call Spread | 3 | 2,024 | 59 | 55.9% | 60.0% | -4.1% |
+| Bull Call Spread | 3 | 2,025 | 79 | 64.6% | 65.0% | -0.5% |
+| Bull Call Spread | 3 | 2,026 | 44 | 50.0% | 52.4% | -2.4% |
+| Bull Call Spread | 7 | 2,023 | 13 | 53.8% | 56.2% | -2.4% |
+| Bull Call Spread | 7 | 2,024 | 59 | 57.6% | 60.4% | -2.8% |
+| Bull Call Spread | 7 | 2,025 | 79 | 65.8% | 68.7% | -2.9% |
+| Bull Call Spread | 7 | 2,026 | 44 | 68.2% | 55.4% | 12.8% |
+| Bull Call Spread | 14 | 2,023 | 13 | 23.1% | 61.5% | -38.4% |
+| Bull Call Spread | 14 | 2,024 | 59 | 59.3% | 71.0% | -11.7% |
+| Bull Call Spread | 14 | 2,025 | 79 | 75.9% | 76.0% | -0.1% |
+| Bull Call Spread | 14 | 2,026 | 43 | 74.4% | 59.1% | 15.3% |
+| Bull Call Spread | 30 | 2,023 | 13 | 15.4% | 55.2% | -39.8% |
+| Bull Call Spread | 30 | 2,024 | 59 | 72.9% | 87.3% | -14.5% |
+| Bull Call Spread | 30 | 2,025 | 79 | 81.0% | 82.1% | -1.1% |
+| Bull Call Spread | 30 | 2,026 | 43 | 83.7% | 54.3% | 29.4% |
+| Long Butterfly / Condor קנוי | 3 | 2,023 | 8 | 37.5% | 41.7% | -4.2% |
+| Long Butterfly / Condor קנוי | 3 | 2,024 | 12 | 50.0% | 35.5% | 14.5% |
 | Long Butterfly / Condor קנוי | 3 | 2,025 | 7 | 28.6% | 28.5% | 0.1% |
-| Long Butterfly / Condor קנוי | 7 | 2,023 | 7 | 71.4% | 55.2% | 16.2% |
+| Long Butterfly / Condor קנוי | 3 | 2,026 | 5 | 40.0% | 39.9% | 0.1% |
+| Long Butterfly / Condor קנוי | 7 | 2,023 | 8 | 62.5% | 55.2% | 7.3% |
+| Long Butterfly / Condor קנוי | 7 | 2,024 | 12 | 41.7% | 33.9% | 7.8% |
 | Long Butterfly / Condor קנוי | 7 | 2,025 | 7 | 0.0% | 31.3% | -31.3% |
-| Long Butterfly / Condor קנוי | 14 | 2,023 | 7 | 0.0% | 39.6% | -39.6% |
-| Long Butterfly / Condor קנוי | 14 | 2,025 | 7 | 28.6% | 31.3% | -2.7% |
-| Long Butterfly / Condor קנוי | 30 | 2,023 | 7 | 0.0% | 24.0% | -24.0% |
-| Long Butterfly / Condor קנוי | 30 | 2,025 | 7 | 0.0% | 25.6% | -25.6% |
-| Long Straddle / Strangle | 3 | 2,025 | 15 | 6.7% | 37.0% | -30.3% |
-| Long Straddle / Strangle | 7 | 2,025 | 15 | 6.7% | 42.3% | -35.6% |
-| Long Straddle / Strangle | 14 | 2,025 | 15 | 20.0% | 39.8% | -19.8% |
-| Long Straddle / Strangle | 30 | 2,025 | 15 | 13.3% | 56.9% | -43.6% |
-| Put Ratio Backspread 1×2 | 3 | 2,024 | 8 | 12.5% | 14.3% | -1.8% |
-| Put Ratio Backspread 1×2 | 3 | 2,025 | 12 | 8.3% | 12.6% | -4.3% |
-| Put Ratio Backspread 1×2 | 3 | 2,026 | 10 | 0.0% | 13.3% | -13.3% |
-| Put Ratio Backspread 1×2 | 7 | 2,024 | 8 | 0.0% | 6.9% | -6.9% |
-| Put Ratio Backspread 1×2 | 7 | 2,025 | 12 | 16.7% | 11.0% | 5.7% |
-| Put Ratio Backspread 1×2 | 7 | 2,026 | 10 | 0.0% | 8.6% | -8.6% |
-| Put Ratio Backspread 1×2 | 14 | 2,024 | 8 | 0.0% | 6.1% | -6.1% |
-| Put Ratio Backspread 1×2 | 14 | 2,025 | 12 | 0.0% | 2.8% | -2.8% |
-| Put Ratio Backspread 1×2 | 14 | 2,026 | 10 | 0.0% | 7.6% | -7.6% |
-| Put Ratio Backspread 1×2 | 30 | 2,024 | 8 | 0.0% | 0.0% | 0.0% |
-| Put Ratio Backspread 1×2 | 30 | 2,025 | 12 | 0.0% | 0.8% | -0.8% |
-| Put Ratio Backspread 1×2 | 30 | 2,026 | 10 | 0.0% | 12.9% | -12.9% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | 2,023 | 29 | 44.8% | 34.4% | 10.5% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | 2,024 | 81 | 37.0% | 39.6% | -2.6% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | 2,025 | 93 | 43.0% | 40.7% | 2.4% |
-| פרפר Call שורי / Broken-Wing Butterfly | 3 | 2,026 | 44 | 38.6% | 32.9% | 5.8% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | 2,023 | 29 | 58.6% | 40.6% | 18.0% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | 2,024 | 81 | 38.3% | 33.1% | 5.2% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | 2,025 | 93 | 29.0% | 37.4% | -8.4% |
-| פרפר Call שורי / Broken-Wing Butterfly | 7 | 2,026 | 44 | 36.4% | 38.1% | -1.8% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | 2,023 | 29 | 62.1% | 45.8% | 16.2% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | 2,024 | 81 | 40.7% | 37.1% | 3.6% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | 2,025 | 93 | 43.0% | 39.0% | 4.0% |
-| פרפר Call שורי / Broken-Wing Butterfly | 14 | 2,026 | 41 | 56.1% | 44.7% | 11.4% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | 2,023 | 29 | 51.7% | 38.5% | 13.2% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | 2,024 | 81 | 45.7% | 50.2% | -4.5% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | 2,025 | 93 | 32.3% | 26.0% | 6.2% |
-| פרפר Call שורי / Broken-Wing Butterfly | 30 | 2,026 | 40 | 27.5% | 33.6% | -6.1% |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | 2,023 | 13 | 23.1% | 37.5% | -14.4% |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | 2,025 | 5 | 40.0% | 22.4% | 17.6% |
-| פרפר Put דובי / Broken-Wing Butterfly | 3 | 2,026 | 9 | 44.4% | 34.3% | 10.2% |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | 2,023 | 13 | 23.1% | 33.3% | -10.3% |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | 2,025 | 5 | 20.0% | 20.3% | -0.3% |
-| פרפר Put דובי / Broken-Wing Butterfly | 7 | 2,026 | 8 | 50.0% | 36.0% | 14.0% |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | 2,023 | 13 | 7.7% | 22.9% | -15.2% |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | 2,025 | 5 | 0.0% | 21.1% | -21.1% |
-| פרפר Put דובי / Broken-Wing Butterfly | 14 | 2,026 | 8 | 50.0% | 33.3% | 16.7% |
-| פרפר Put דובי / Broken-Wing Butterfly | 30 | 2,023 | 13 | 0.0% | 13.5% | -13.5% |
-| פרפר Put דובי / Broken-Wing Butterfly | 30 | 2,025 | 5 | 20.0% | 17.1% | 2.9% |
+| Long Butterfly / Condor קנוי | 14 | 2,023 | 8 | 0.0% | 39.6% | -39.6% |
+| Long Butterfly / Condor קנוי | 14 | 2,024 | 12 | 25.0% | 31.0% | -6.0% |
+| Long Butterfly / Condor קנוי | 14 | 2,025 | 7 | 42.9% | 31.3% | 11.6% |
+| Long Butterfly / Condor קנוי | 30 | 2,023 | 8 | 0.0% | 24.0% | -24.0% |
+| Long Butterfly / Condor קנוי | 30 | 2,024 | 12 | 25.0% | 39.6% | -14.6% |
+| Long Butterfly / Condor קנוי | 30 | 2,025 | 7 | 14.3% | 25.6% | -11.3% |
+| Long Straddle / Strangle | 3 | 2,025 | 5 | 0.0% | 37.0% | -37.0% |
+| Long Straddle / Strangle | 7 | 2,025 | 5 | 0.0% | 42.3% | -42.3% |
+| Long Straddle / Strangle | 14 | 2,025 | 5 | 20.0% | 39.8% | -19.8% |
+| Long Straddle / Strangle | 30 | 2,025 | 5 | 20.0% | 56.9% | -36.9% |
+| Put Ratio Backspread 1×2 | 3 | 2,024 | 6 | 16.7% | 14.3% | 2.4% |
+| Put Ratio Backspread 1×2 | 3 | 2,025 | 11 | 9.1% | 12.6% | -3.5% |
+| Put Ratio Backspread 1×2 | 7 | 2,024 | 6 | 0.0% | 6.9% | -6.9% |
+| Put Ratio Backspread 1×2 | 7 | 2,025 | 11 | 18.2% | 11.0% | 7.2% |
+| Put Ratio Backspread 1×2 | 14 | 2,024 | 6 | 0.0% | 6.1% | -6.1% |
+| Put Ratio Backspread 1×2 | 14 | 2,025 | 11 | 0.0% | 2.8% | -2.8% |
+| Put Ratio Backspread 1×2 | 30 | 2,024 | 6 | 0.0% | 0.0% | 0.0% |
+| Put Ratio Backspread 1×2 | 30 | 2,025 | 11 | 0.0% | 0.8% | -0.8% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | 2,023 | 38 | 42.1% | 34.4% | 7.7% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | 2,024 | 107 | 35.5% | 39.6% | -4.1% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | 2,025 | 101 | 39.6% | 40.7% | -1.0% |
+| פרפר Call שורי / Broken-Wing Butterfly | 3 | 2,026 | 40 | 32.5% | 32.9% | -0.4% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | 2,023 | 38 | 47.4% | 40.6% | 6.7% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | 2,024 | 107 | 29.0% | 33.1% | -4.1% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | 2,025 | 101 | 28.7% | 37.4% | -8.7% |
+| פרפר Call שורי / Broken-Wing Butterfly | 7 | 2,026 | 40 | 35.0% | 38.1% | -3.1% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | 2,023 | 38 | 57.9% | 45.8% | 12.1% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | 2,024 | 107 | 36.4% | 37.1% | -0.7% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | 2,025 | 101 | 40.6% | 39.0% | 1.6% |
+| פרפר Call שורי / Broken-Wing Butterfly | 14 | 2,026 | 37 | 37.8% | 44.7% | -6.9% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | 2,023 | 38 | 44.7% | 38.5% | 6.2% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | 2,024 | 107 | 46.7% | 50.2% | -3.5% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | 2,025 | 101 | 22.8% | 26.0% | -3.2% |
+| פרפר Call שורי / Broken-Wing Butterfly | 30 | 2,026 | 36 | 22.2% | 33.6% | -11.4% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | 2,023 | 21 | 38.1% | 37.5% | 0.6% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | 2,024 | 12 | 16.7% | 25.7% | -9.0% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | 2,025 | 7 | 42.9% | 22.4% | 20.5% |
+| פרפר Put דובי / Broken-Wing Butterfly | 3 | 2,026 | 16 | 37.5% | 34.3% | 3.2% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | 2,023 | 21 | 33.3% | 33.3% | 0.0% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | 2,024 | 12 | 50.0% | 32.7% | 17.3% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | 2,025 | 7 | 28.6% | 20.3% | 8.2% |
+| פרפר Put דובי / Broken-Wing Butterfly | 7 | 2,026 | 15 | 40.0% | 36.0% | 4.0% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | 2,023 | 21 | 23.8% | 22.9% | 0.9% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | 2,024 | 12 | 25.0% | 22.9% | 2.1% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | 2,025 | 7 | 14.3% | 21.1% | -6.9% |
+| פרפר Put דובי / Broken-Wing Butterfly | 14 | 2,026 | 15 | 26.7% | 33.3% | -6.7% |
+| פרפר Put דובי / Broken-Wing Butterfly | 30 | 2,023 | 21 | 4.8% | 13.5% | -8.8% |
+| פרפר Put דובי / Broken-Wing Butterfly | 30 | 2,024 | 12 | 0.0% | 12.7% | -12.7% |
+| פרפר Put דובי / Broken-Wing Butterfly | 30 | 2,025 | 7 | 14.3% | 17.1% | -2.8% |
+
+## Context-only OOS ablation: FX-equity state and TA35-VTA35 correlation
+
+| feature | horizon | n_eff | baseline_accuracy | augmented_accuracy | lift | p_value | positive_regimes | tested_regimes | fdr_q | eligible | status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| fx_equity_state | 3 | 241 | 52.7% | 51.9% | -0.8% | 0.5896 | 0 | 4 | 0.9703 | 0 | context-only |
+| ta35_vta35_corr_60 | 3 | 225 | 53.3% | 48.4% | -4.9% | 0.8730 | 0 | 4 | 0.9703 | 0 | context-only |
+| fx_equity_state | 7 | 103 | 50.5% | 44.7% | -5.8% | 0.8633 | 0 | 4 | 0.9703 | 0 | context-only |
+| ta35_vta35_corr_60 | 7 | 96 | 51.0% | 46.9% | -4.2% | 0.7418 | 1 | 3 | 0.9703 | 0 | context-only |
+| fx_equity_state | 14 | 50 | 60.0% | 68.0% | 8.0% | 0.1587 | 1 | 2 | 0.9703 | 0 | context-only |
+| ta35_vta35_corr_60 | 14 | 47 | 61.7% | 44.7% | -17.0% | 0.9703 | 0 | 2 | 0.9703 | 0 | context-only |
+| fx_equity_state | 30 | 23 | 60.9% | 52.2% | -8.7% | 0.7602 | 1 | 2 | 0.9703 | 0 | context-only |
+| ta35_vta35_corr_60 | 30 | 22 | 63.6% | 54.5% | -9.1% | 0.7602 | 1 | 2 | 0.9703 | 0 | context-only |

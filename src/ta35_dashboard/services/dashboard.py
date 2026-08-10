@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -9,6 +10,7 @@ from ta35_dashboard.analytics import indicator_signal
 from ta35_dashboard.storage import SQLiteRepository
 
 from .backtest import DEFAULT_STRENGTH_HORIZON, BacktestReport, run_backtest
+from .research import run_research_backtest
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +50,26 @@ class SeriesHealth:
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceCard:
+    horizon_days: int
+    n_eff: int
+    lift: float | None
+    fdr_q: float | None
+    nonoverlap_rate: float | None
+    positive_regimes: int
+    tested_regimes: int
+    eligible: bool
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class RegimeMatrix:
+    market_state: str
+    volatility_state: str
+    cell: str
+
+
+@dataclass(frozen=True, slots=True)
 class DashboardBundle:
     meta: SnapshotMeta
     regime: str
@@ -64,6 +86,9 @@ class DashboardBundle:
     market_trend_score: float | None
     implied_volatility: float | None
     backtest: BacktestReport
+    premium_evidence: EvidenceCard
+    regime_matrix: RegimeMatrix
+    context_ablation: tuple[dict[str, object], ...]
 
 
 CARD_DEFINITIONS = (
@@ -302,6 +327,48 @@ def load_dashboard_bundle(
         repository,
         indicator_keys=tuple(definition[0] for definition in CARD_DEFINITIONS),
     )
+    research = run_research_backtest(
+        repository,
+        indicator_keys=tuple(definition[0] for definition in CARD_DEFINITIONS),
+    )
+    short_names = {"Bull Put Spread", "Bear Call Spread", "Iron Condor", "Iron Butterfly"}
+    strategy_table = research.tables.get("strategy_summary")
+    candidates = strategy_table[
+        (strategy_table["horizon"] == DEFAULT_STRENGTH_HORIZON)
+        & strategy_table["strategy"].isin(short_names)
+    ] if strategy_table is not None and not strategy_table.empty else None
+    best = (
+        candidates.sort_values(["fdr_q", "uplift"], ascending=[True, False]).iloc[0]
+        if candidates is not None and not candidates.empty
+        else None
+    )
+    eligible = bool(
+        best is not None
+        and best["selected_n"] >= 80
+        and best["uplift"] > 0
+        and best["fdr_q"] <= 0.05
+        and best["nonoverlap_n_min"] >= 20
+        and best["nonoverlap_success_rate"] > best["unconditional_baseline"]
+        and best["positive_regimes"] >= 2
+    )
+    def finite_float(value: object) -> float | None:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if math.isfinite(parsed) else None
+
+    evidence = EvidenceCard(
+        horizon_days=DEFAULT_STRENGTH_HORIZON,
+        n_eff=int(best["nonoverlap_n_min"]) if best is not None else 0,
+        lift=finite_float(best["uplift"]) if best is not None else None,
+        fdr_q=finite_float(best["fdr_q"]) if best is not None else None,
+        nonoverlap_rate=(finite_float(best["nonoverlap_success_rate"]) if best is not None else None),
+        positive_regimes=int(best["positive_regimes"]) if best is not None else 0,
+        tested_regimes=int(best["tested_regimes"]) if best is not None else 0,
+        eligible=eligible,
+        status="זכאי למכירת פרמיה" if eligible else "חסום — ראיות לא מספיקות",
+    )
     cards_list: list[MetricCard] = []
     for key, label, fmt, help_text in CARD_DEFINITIONS:
         value = metrics[key].value if key in metrics else None
@@ -355,6 +422,19 @@ def load_dashboard_bundle(
     ta = repository.bar_history("TA35", 252)
     vta = repository.bar_history("VTA35", 252)
     age_days = (now.date() - snapshot.session_date).days
+    market_score = trend.value if trend else None
+    market_state = (
+        "עולה" if market_score is not None and market_score >= 0.4
+        else "יורד" if market_score is not None and market_score <= -0.4
+        else "ניטרלי"
+    )
+    volatility_score = vol_direction.value if vol_direction else None
+    volatility_state = (
+        "מתרחבת" if volatility_score is not None and volatility_score >= 1 / 3
+        else "מתכווצת" if volatility_score is not None and volatility_score <= -1 / 3
+        else "מעורבת"
+    )
+    ablation = research.tables.get("context_ablation_oos")
     return DashboardBundle(
         meta=SnapshotMeta(
             snapshot.session_date,
@@ -389,4 +469,15 @@ def load_dashboard_bundle(
             else None
         ),
         backtest=backtest,
+        premium_evidence=evidence,
+        regime_matrix=RegimeMatrix(
+            market_state=market_state,
+            volatility_state=volatility_state,
+            cell=f"{market_state} × {volatility_state}",
+        ),
+        context_ablation=(
+            tuple(ablation.to_dict(orient="records"))
+            if ablation is not None and not ablation.empty
+            else ()
+        ),
     )

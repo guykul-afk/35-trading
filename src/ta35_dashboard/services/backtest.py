@@ -255,13 +255,30 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
         ):
             ta[column] = np.nan
     ta["vrp_spread"] = ta["vta35"] / 100 - ta["rv_20"]
+    local_iv_votes = pd.DataFrame(
+        {
+            "change": np.sign(ta["vta35_change_5d"]),
+            "level": np.sign(ta["vta35_zscore_60"]),
+            "vrp": np.sign(ta["vrp_spread"]),
+        },
+        index=ta.index,
+    )
+    ta["local_iv_family_score"] = local_iv_votes.mean(axis=1)
 
     usd = _bars_frame(repository, "USDILS")
-    ta["usdils_change_5d"] = (
+    usd_change = (
         _asof(usd["close"].astype(float).pct_change(5), ta.index)
         if not usd.empty
         else np.nan
     )
+    ta["usdils_change_5d"] = usd_change
+    ta["fx_equity_state"] = -np.sign(usd_change) * np.sign(close.pct_change(5))
+    ta_returns = close.pct_change()
+    if not vta.empty:
+        vta_returns = _asof(vta["close"].astype(float).pct_change(), ta.index)
+        ta["ta35_vta35_corr_60"] = ta_returns.rolling(60).corr(vta_returns)
+    else:
+        ta["ta35_vta35_corr_60"] = np.nan
 
     aligned: dict[str, pd.Series] = {}
     for symbol in ("VIX9D", "VIX", "VIX3M"):
@@ -279,8 +296,7 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
         {
             "rv": np.where(ta["rv_20_60_ratio"] > 1, 1, -1),
             "atr": np.where(ta["atr_5_20_ratio"] > 1, 1, -1),
-            "vta_change": np.where(ta["vta35_change_5d"] > 0, 1, -1),
-            "vta_z": np.where(ta["vta35_zscore_60"] > 0, 1, -1),
+            "local_iv": np.sign(ta["local_iv_family_score"]),
             "vix_short": np.where(ta["vix9d_vix_ratio"] > 1, 1, -1),
             "vix_curve": np.where(ta["vix_vix3m_ratio"] > 1, 1, -1),
         },
@@ -289,8 +305,7 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     source_columns = (
         "rv_20_60_ratio",
         "atr_5_20_ratio",
-        "vta35_change_5d",
-        "vta35_zscore_60",
+        "local_iv_family_score",
         "vix9d_vix_ratio",
         "vix_vix3m_ratio",
     )

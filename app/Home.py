@@ -16,6 +16,23 @@ page_header("דשבורד תנודתיות ת״א־35 — Lite", data)
 
 colors = {"רגוע": "green", "רגיל": "blue", "זהירות": "orange", "לחץ גבוה": "red"}
 st.markdown(f"### משטר שוק: :{colors.get(data.regime, 'gray')}[{data.regime}]")
+st.caption(
+    f"מטריצת משטר 3×3: **{data.regime_matrix.market_state} × "
+    f"{data.regime_matrix.volatility_state}**"
+)
+matrix_rows = []
+for market_state in ("עולה", "ניטרלי", "יורד"):
+    row = {"כיוון שוק": market_state}
+    for volatility_state in ("מתרחבת", "מעורבת", "מתכווצת"):
+        row[volatility_state] = (
+            "● מצב נוכחי"
+            if market_state == data.regime_matrix.market_state
+            and volatility_state == data.regime_matrix.volatility_state
+            else "○"
+        )
+    matrix_rows.append(row)
+with st.expander("מטריצת המשטר המלאה", expanded=False):
+    st.dataframe(pd.DataFrame(matrix_rows), hide_index=True, width="stretch")
 
 state_left, state_right = st.columns(2)
 vol_score = (
@@ -70,6 +87,7 @@ recommendation = recommend_strategy(
     volatility_score=data.volatility_direction_score,
     regime=data.regime,
     horizon_days=horizon,
+    premium_sale_eligible=data.premium_evidence.eligible,
 )
 
 strategy_history = (
@@ -102,19 +120,34 @@ if recommendation.primary:
 else:
     st.warning(f"**{recommendation.status}:** {recommendation.explanation}")
 
-range_left, range_middle, range_right = st.columns(3)
-
-
-def format_range(values: tuple[float, float] | None) -> str:
-    return "לא זמין" if values is None else f"{values[0]:,.0f}–{values[1]:,.0f}"
-
-
-range_left.metric("טווח ליבה ‎±0.5σ", format_range(recommendation.core_range))
-range_middle.metric("טווח בסיס ‎±1σ", format_range(recommendation.base_range))
-range_right.metric(
-    recommendation.focus_label,
-    format_range(recommendation.focus_range),
+st.markdown("**מפת התאמת תרחיש — אינה payoff או תחזית רווח/הפסד**")
+st.dataframe(
+    pd.DataFrame(
+        recommendation.scenario_fit,
+        columns=["ממד", "מצב נוכחי", "התאמה"],
+    ),
+    hide_index=True,
+    width="stretch",
 )
+st.caption(
+    "המפה מתארת התאמה איכותית של משפחת אסטרטגיה למצב השוק. "
+    "היא אינה כוללת פרמיות, Greeks, נקודות איזון או P&L."
+)
+
+evidence = data.premium_evidence
+with st.expander("כרטיס ראיות ושער זכאות למכירת פרמיה", expanded=True):
+    e1, e2, e3, e4 = st.columns(4)
+    e1.metric("סטטוס", evidence.status)
+    e2.metric("n אפקטיבי", evidence.n_eff)
+    e3.metric("Lift OOS", "—" if evidence.lift is None else f"{evidence.lift:+.1%}")
+    e4.metric("FDR q", "—" if evidence.fdr_q is None else f"{evidence.fdr_q:.3f}")
+    st.caption(
+        f"Non-overlap: "
+        f"{'—' if evidence.nonoverlap_rate is None else f'{evidence.nonoverlap_rate:.1%}'} · "
+        f"משטרים חיוביים: {evidence.positive_regimes}/{evidence.tested_regimes}. "
+        "נדרשים יחד n_eff≥20, לפחות 80 בחירות, lift חיובי, FDR≤5%, "
+        "יתרון במדגם non-overlap ויציבות בשני משטרים."
+    )
 
 with st.expander("למה האסטרטגיה מתאימה ומהן החלופות", expanded=False):
     st.markdown(
@@ -319,6 +352,16 @@ with st.expander("תוצאות backtest — כל האינדיקטורים והא
     st.dataframe(pd.DataFrame(strategy_rows), hide_index=True, width="stretch")
     for warning in report.warnings:
         st.caption(f"• {warning}")
+
+with st.expander("Ablation OOS — מט״ח–מניות ומתאם TA35–VTA35", expanded=False):
+    if data.context_ablation:
+        st.dataframe(pd.DataFrame(data.context_ablation), hide_index=True, width="stretch")
+        st.caption(
+            "הבדיקות משתמשות במדגמים לא־חופפים וב־FDR. שני המשתנים נשארים "
+            "context-only ואינם משנים חץ פעיל ללא מעבר כל השערים."
+        )
+    else:
+        st.info("אין מדגם מספיק לבדיקת התרומה השולית.")
 
 left, right = st.columns(2)
 with left:

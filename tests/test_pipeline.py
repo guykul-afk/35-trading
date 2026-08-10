@@ -32,6 +32,7 @@ class PipelineTests(unittest.TestCase):
                 "vta35_change_5d",
                 "vta35_zscore_60",
                 "vrp_spread",
+                "local_iv_family_score",
                 "forecast_rv_3d",
                 "expected_move_3d_points",
                 "vix_curve_ratio",
@@ -50,7 +51,11 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(-1 <= metrics["volatility_direction_score"].value <= 1)
             self.assertEqual(
                 metrics["volatility_direction_score"].dimensions["available_inputs"],
-                6,
+                5,
+            )
+            self.assertEqual(
+                metrics["local_iv_family_score"].dimensions["family"],
+                "local_iv_no_double_count",
             )
             self.assertTrue(-1 <= metrics["market_trend_state"].value <= 1)
             self.assertEqual(

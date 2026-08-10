@@ -756,6 +756,110 @@ def _knowledge_ranking(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     )
 
 
+def _context_ablation(frame: pd.DataFrame, horizons: tuple[int, ...]) -> pd.DataFrame:
+    """Strict non-overlapping OOS checks for context-only state variables.
+
+    The two diagnostics do not emit dashboard arrows.  Each row uses one
+    offset-separated sample, and the candidate orientation is fixed by market
+    interpretation rather than selected on the evaluation outcomes.
+    """
+
+    rows: list[dict[str, object]] = []
+    for horizon in horizons:
+        outcomes = _outcomes(frame, horizon)
+        actual = outcomes["market_direction"]
+        baseline_prediction = np.sign(frame["market_trend_score"])
+        candidates = {
+            "fx_equity_state": -np.sign(frame["usdils_change_5d"]),
+            "ta35_vta35_corr_60": np.where(
+                frame["ta35_vta35_corr_60"] < 0,
+                -np.sign(frame["vta35_change_5d"]),
+                0,
+            ),
+        }
+        for name, candidate in candidates.items():
+            sample = pd.DataFrame(
+                {
+                    "position": np.arange(len(frame)),
+                    "actual": actual,
+                    "baseline": baseline_prediction,
+                    "candidate": candidate,
+                    "regime": frame["regime"],
+                },
+                index=frame.index,
+            ).replace([np.inf, -np.inf], np.nan)
+            sample = sample.dropna()
+            sample = sample[
+                (sample["actual"] != 0)
+                & (sample["baseline"] != 0)
+                & (sample["candidate"] != 0)
+                & (sample["position"] % horizon == 0)
+            ]
+            if sample.empty:
+                rows.append(
+                    {
+                        "feature": name,
+                        "horizon": horizon,
+                        "n_eff": 0,
+                        "baseline_accuracy": np.nan,
+                        "augmented_accuracy": np.nan,
+                        "lift": np.nan,
+                        "p_value": np.nan,
+                        "positive_regimes": 0,
+                        "tested_regimes": 0,
+                    }
+                )
+                continue
+            baseline_hit = sample["baseline"] == sample["actual"]
+            candidate_hit = sample["candidate"] == sample["actual"]
+            wins = int((candidate_hit & ~baseline_hit).sum())
+            losses = int((baseline_hit & ~candidate_hit).sum())
+            discordant = wins + losses
+            # One-sided paired normal approximation; conservative when tied.
+            p_value = (
+                _normal_sf((wins - losses) / math.sqrt(discordant))
+                if discordant
+                else 1.0
+            )
+            regime_lifts = []
+            for _, segment in sample.groupby("regime"):
+                if len(segment) >= 8:
+                    regime_lifts.append(
+                        float(
+                            (segment["candidate"] == segment["actual"]).mean()
+                            - (segment["baseline"] == segment["actual"]).mean()
+                        )
+                    )
+            baseline_accuracy = float(baseline_hit.mean())
+            augmented_accuracy = float(candidate_hit.mean())
+            rows.append(
+                {
+                    "feature": name,
+                    "horizon": horizon,
+                    "n_eff": len(sample),
+                    "baseline_accuracy": baseline_accuracy,
+                    "augmented_accuracy": augmented_accuracy,
+                    "lift": augmented_accuracy - baseline_accuracy,
+                    "p_value": p_value,
+                    "positive_regimes": sum(value > 0 for value in regime_lifts),
+                    "tested_regimes": len(regime_lifts),
+                }
+            )
+    result = pd.DataFrame(rows)
+    if not result.empty:
+        result["fdr_q"] = _bh_adjust(result["p_value"])
+        result["eligible"] = (
+            (result["n_eff"] >= 80)
+            & (result["lift"] > 0)
+            & (result["fdr_q"] <= 0.05)
+            & (result["positive_regimes"] >= 2)
+        )
+        result["status"] = np.where(
+            result["eligible"], "candidate-after-review", "context-only"
+        )
+    return result
+
+
 def run_research_backtest(
     repository: SQLiteRepository,
     *,
@@ -784,6 +888,7 @@ def run_research_backtest(
         "forecast_calibration": _forecast_table(frame, horizons),
         **_indicator_tables(indicator_records),
         **_strategy_tables(strategy_records, sensitivity),
+        "context_ablation_oos": _context_ablation(frame, horizons),
     }
     tables = {"knowledge_ranking": _knowledge_ranking(tables), **tables}
     return ResearchReport(
@@ -851,14 +956,17 @@ TABLE_TITLES = {
     "strategy_sensitivity": "Strategy scenario sensitivity to 0.75x / 1.00x / 1.25x volatility bands",
     "strategy_by_regime": "Strategy robustness by market regime",
     "strategy_by_year": "Strategy robustness by calendar year",
+    "context_ablation_oos": "Context-only OOS ablation: FX-equity state and TA35-VTA35 correlation",
 }
 
 
 def render_research_markdown(report: ResearchReport) -> str:
     header = f"""# TA-35 dashboard — comprehensive backtest research
 
-Generated: {report.generated_at:%Y-%m-%d %H:%M UTC}  
-TA-35 sample: {report.start_date} to {report.end_date} ({report.observations:,} sessions)  
+Generated: {report.generated_at:%Y-%m-%d %H:%M UTC}
+
+TA-35 sample: {report.start_date} to {report.end_date} ({report.observations:,} sessions)
+
 Horizons: {', '.join(str(value) for value in BACKTEST_HORIZONS)} trading days
 
 ## Executive interpretation

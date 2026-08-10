@@ -81,3 +81,11 @@
   compact market-regime dashboard with explicit data-health status.
 - TASE ingestion is a manual official CSV import; Cboe histories can refresh
   directly. Missing data never receives an invented fallback.
+# 1.6.0
+
+- Collapsed VTA35 level, change and IV-RV spread into one local-IV family vote.
+- Added a 3×3 market-direction × volatility-regime matrix.
+- Added an evidence card and hard eligibility gates for short-premium strategies.
+- Replaced pseudo-payoff ranges with a clearly labelled scenario-fit map.
+- Added non-overlapping OOS ablation with FDR for FX-equity state and rolling
+  TA35-VTA35 correlation; both remain context-only until every gate passes.
