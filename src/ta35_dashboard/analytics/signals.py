@@ -73,7 +73,7 @@ def indicator_signal(
             note,
         )
 
-    if key in {"forecast_rv_3d", "expected_move_3d_points"}:
+    if key in {"forecast_rv_3d", "har_rv_3d", "expected_move_3d_points"}:
         forecast = metric_values.get("forecast_rv_3d")
         rv20 = metric_values.get("rv_20")
         if forecast is None or rv20 is None or rv20 <= 0:
@@ -86,6 +86,30 @@ def indicator_signal(
             1,
             "הכיוון משווה את התחזית ל־RV20; הטווח עצמו אינו חוזה כיוון מדד.",
         )
+
+    research_vol_rules = {
+        "downside_share_20": (0.50, 0.05, "חלק גבוה של שונות שלילית מסמן לחץ; EOD proxy מחקרי."),
+        "vta_vol_of_vol_20": (0.035, 0.005, "אי־יציבות גבוהה ב־IV עשויה לסמן מעבר משטר; Research בלבד."),
+        "rs_range_5_20": (1.0, 0.05, "האצה בטווחי OHLC מצביעה על התרחבות RV; Research בלבד."),
+        "local_global_stress_spread": (0.0, 0.15, "לחץ מקומי מעל הגלובלי הוא גורם הקשר, לא אות כיוון עצמאי."),
+        "matched_vrp_3d": (0.0, 0.0005, "פרמיית שונות מותאמת אופק; אינה חיזוי RV כיווני ישיר."),
+    }
+    if key in research_vol_rules:
+        neutral, deadband, note = research_vol_rules[key]
+        vol_direction = direction(value, neutral=neutral, deadband=deadband)
+        return arrow(vol_direction), "↔", 1, note
+
+    if key == "trend_efficiency_20":
+        # Strong clean trends were associated with lower future RV in discovery.
+        vol_direction = -direction(abs(value), neutral=0.35, deadband=0.05)
+        return arrow(vol_direction), "↔", 1, "פילטר משטר רציף; אינו קול כיוון עצמאי."
+
+    if key == "range_position_20":
+        return "↔", "↔", 1, "מיקום בטווח משמש פילטר trend/reversal ולא הצבעה עצמאית."
+
+    if key == "reversal_5_vol_scaled":
+        market_direction = direction(value, neutral=0.0, deadband=0.75)
+        return "↔", arrow(market_direction), 1, "תיקון קצר רק לאחר מהלך קיצוני מנורמל; Research בלבד."
 
     if key == "vta35":
         zscore = metric_values.get("vta35_zscore_60")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ta35-dashboard"
-version = "1.6.0"
+version = "2.0.0"
 description = "Free public-data TA-35 end-of-day volatility dashboard"
 requires-python = ">=3.11"
 dependencies = [

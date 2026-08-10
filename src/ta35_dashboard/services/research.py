@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
-from ta35_dashboard.analytics import indicator_signal, recommend_strategy
+from ta35_dashboard.analytics import indicator_signal, qlike, recommend_strategy
 from ta35_dashboard.storage import SQLiteRepository
 
 from .backtest import (
@@ -691,10 +691,12 @@ def _har_rv_benchmark(frame: pd.DataFrame, horizons: tuple[int, ...]) -> pd.Data
     features = pd.DataFrame(
         {
             "const": 1.0,
-            "rv_daily": daily_rv,
-            "rv_weekly": daily_rv.rolling(5).mean(),
-            "rv_monthly": daily_rv.rolling(22).mean(),
+            "rv_daily": np.log(daily_rv.clip(lower=1e-6)),
+            "rv_weekly": np.log(daily_rv.rolling(5).mean().clip(lower=1e-6)),
+            "rv_monthly": np.log(daily_rv.rolling(22).mean().clip(lower=1e-6)),
+            "downside_share_20": frame["downside_share_20"],
             "vta35": frame["vta35"].astype(float) / 100,
+            "local_global_stress_spread": frame["local_global_stress_spread"],
         },
         index=frame.index,
     )
@@ -707,31 +709,38 @@ def _har_rv_benchmark(frame: pd.DataFrame, horizons: tuple[int, ...]) -> pd.Data
                 continue
             train_end = position - horizon
             train = features.iloc[: train_end + 1].copy()
-            train["target"] = target.iloc[: train_end + 1]
+            train["target"] = np.log(target.iloc[: train_end + 1].clip(lower=1e-6))
             train = train.replace([np.inf, -np.inf], np.nan).dropna()
             current = features.iloc[position]
             actual = target.iloc[position]
             if len(train) < 80 or not _finite(actual):
                 continue
             base_columns = ["const", "rv_daily", "rv_weekly", "rv_monthly"]
-            if current[base_columns + ["vta35"]].isna().any():
+            x_columns = [
+                *base_columns,
+                "downside_share_20",
+                "vta35",
+                "local_global_stress_spread",
+            ]
+            if current[x_columns].isna().any():
                 continue
             base_beta = np.linalg.lstsq(
                 train[base_columns].to_numpy(), train["target"].to_numpy(), rcond=None
             )[0]
-            augmented_columns = [*base_columns, "vta35"]
-            augmented_beta = np.linalg.lstsq(
-                train[augmented_columns].to_numpy(),
+            x_beta = np.linalg.lstsq(
+                train[x_columns].to_numpy(),
                 train["target"].to_numpy(),
                 rcond=None,
             )[0]
             predictions.append(
                 {
                     "actual": float(actual),
-                    "har": float(current[base_columns].to_numpy() @ base_beta),
-                    "har_vta35": float(
-                        current[augmented_columns].to_numpy() @ augmented_beta
-                    ),
+                    "naive_rv20": float(frame["rv_20"].iloc[position]),
+                    "combined": float(frame["forecast_rv_3d"].iloc[position]),
+                    "vta35": float(frame["vta35"].iloc[position]) / 100,
+                    "gjr": float(frame["gjr_rv_1d"].iloc[position]),
+                    "har": float(math.exp(current[base_columns].to_numpy() @ base_beta)),
+                    "har_x": float(math.exp(current[x_columns].to_numpy() @ x_beta)),
                     "rv_20": float(frame["rv_20"].iloc[position]),
                 }
             )
@@ -739,25 +748,242 @@ def _har_rv_benchmark(frame: pd.DataFrame, horizons: tuple[int, ...]) -> pd.Data
         if sample.empty:
             rows.append({"horizon": horizon, "n_eff": 0})
             continue
-        actual_direction = np.sign(sample["actual"] - sample["rv_20"])
-        har_direction = np.sign(sample["har"] - sample["rv_20"])
-        augmented_direction = np.sign(sample["har_vta35"] - sample["rv_20"])
-        har_accuracy = float((har_direction == actual_direction).mean())
-        augmented_accuracy = float((augmented_direction == actual_direction).mean())
-        rows.append(
-            {
-                "horizon": horizon,
-                "n_eff": len(sample),
-                "har_mae": float((sample["har"] - sample["actual"]).abs().mean()),
-                "har_vta35_mae": float(
-                    (sample["har_vta35"] - sample["actual"]).abs().mean()
-                ),
-                "har_direction_accuracy": har_accuracy,
-                "har_vta35_direction_accuracy": augmented_accuracy,
-                "vta35_incremental_accuracy": augmented_accuracy - har_accuracy,
-            }
-        )
+        actual_variance = sample["actual"].to_numpy() ** 2
+        model_losses: dict[str, np.ndarray] = {}
+        for model in ("naive_rv20", "combined", "vta35", "gjr", "har", "har_x"):
+            forecast_values = sample[model].clip(lower=1e-6).to_numpy()
+            forecast_variance = forecast_values**2
+            ratio = actual_variance / forecast_variance
+            losses = ratio - np.log(ratio) - 1
+            model_losses[model] = losses
+            direction_accuracy = float(
+                (
+                    np.sign(sample[model] - sample["rv_20"])
+                    == np.sign(sample["actual"] - sample["rv_20"])
+                ).mean()
+            )
+            rows.append(
+                {
+                    "horizon": horizon,
+                    "model": model,
+                    "n_eff": len(sample),
+                    "mae": float((sample[model] - sample["actual"]).abs().mean()),
+                    "mse_variance": float(np.mean((forecast_variance - actual_variance) ** 2)),
+                    "qlike": qlike(actual_variance, forecast_variance),
+                    "direction_accuracy": direction_accuracy,
+                }
+            )
+        naive_loss = model_losses["naive_rv20"]
+        for row in rows[-6:]:
+            model = str(row["model"])
+            row["qlike_improvement_vs_naive"] = float(
+                np.mean(naive_loss - model_losses[model])
+            )
+            row["block_bootstrap_p"] = _block_bootstrap_pvalue(
+                naive_loss - model_losses[model], block=max(2, horizon)
+            )
     return pd.DataFrame(rows)
+
+
+def _block_bootstrap_pvalue(
+    improvement: np.ndarray, *, block: int, draws: int = 499
+) -> float:
+    """One-sided moving-block bootstrap under a zero-mean null."""
+
+    values = np.asarray(improvement, dtype=float)
+    values = values[np.isfinite(values)]
+    if len(values) < 12:
+        return math.nan
+    observed = float(np.mean(values))
+    centered = values - observed
+    rng = np.random.default_rng(35_2026)
+    starts = np.arange(max(1, len(values) - block + 1))
+    boot = np.empty(draws)
+    blocks_needed = math.ceil(len(values) / block)
+    for draw in range(draws):
+        selected = rng.choice(starts, size=blocks_needed, replace=True)
+        sample = np.concatenate([centered[start : start + block] for start in selected])
+        boot[draw] = float(np.mean(sample[: len(values)]))
+    return float((1 + np.sum(boot >= observed)) / (draws + 1))
+
+
+def _offset_detail(records: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for keys, group in records.groupby(["indicator", "horizon", "axis"], sort=True):
+        indicator, horizon, axis = keys
+        for offset in range(int(horizon)):
+            sample = group[group["position"].astype(int) % int(horizon) == offset]
+            if sample.empty:
+                continue
+            baseline = _marginal_baseline(sample)
+            rows.append(
+                {
+                    "indicator": indicator,
+                    "horizon": horizon,
+                    "axis": axis,
+                    "offset": offset,
+                    "n": len(sample),
+                    "accuracy": float(sample["hit"].mean()),
+                    "baseline": baseline,
+                    "lift": float(sample["hit"].mean()) - baseline,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _ridge_logit_predict(x: np.ndarray, y: np.ndarray, current: np.ndarray) -> float:
+    """Deterministic L2-shrunk logistic fit for the small EOD sample."""
+
+    mean = np.mean(x, axis=0)
+    scale = np.std(x, axis=0)
+    scale[scale < 1e-8] = 1.0
+    train = (x - mean) / scale
+    point = (current - mean) / scale
+    design = np.column_stack((np.ones(len(train)), train))
+    beta = np.zeros(design.shape[1])
+    for _ in range(250):
+        logits = np.clip(design @ beta, -20, 20)
+        probabilities = 1 / (1 + np.exp(-logits))
+        gradient = design.T @ (probabilities - y) / len(y)
+        gradient[1:] += 0.25 * beta[1:] / len(y)
+        beta -= 0.25 * gradient
+    return float(1 / (1 + math.exp(-float(np.clip(np.r_[1.0, point] @ beta, -20, 20)))))
+
+
+def _probabilistic_family_model(
+    frame: pd.DataFrame, horizons: tuple[int, ...]
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Purged, non-overlapping OOS model with one input per information family."""
+
+    def expanding_rank(series: pd.Series) -> pd.Series:
+        return series.expanding(min_periods=60).apply(
+            lambda values: float(np.mean(values <= values[-1])), raw=True
+        )
+
+    ranked = frame[
+        [
+            "downside_share_20",
+            "rs_range_5_20",
+            "rv_20_60_ratio",
+            "vta35_zscore_60",
+            "vta35_change_5d",
+            "vta_vol_of_vol_20",
+            "local_global_stress_spread",
+            "vix_vix3m_ratio",
+            "usdils_change_5d",
+            "trend_efficiency_20",
+            "range_position_20",
+            "reversal_5_vol_scaled",
+            "matched_vrp_3d",
+        ]
+    ].apply(expanding_rank)
+    families = pd.DataFrame(
+        {
+            "rv_local": ranked[["downside_share_20", "rs_range_5_20", "rv_20_60_ratio"]].mean(axis=1),
+            "iv_local": ranked[["vta35_zscore_60", "vta35_change_5d", "vta_vol_of_vol_20"]].mean(axis=1),
+            "global_fx": ranked[["local_global_stress_spread", "vix_vix3m_ratio", "usdils_change_5d"]].mean(axis=1),
+            "price_regime": ranked[["trend_efficiency_20", "range_position_20", "reversal_5_vol_scaled"]].mean(axis=1),
+            "forecast_gap": ranked["matched_vrp_3d"],
+        },
+        index=frame.index,
+    )
+    names = list(families.columns)
+    predictions: list[dict[str, object]] = []
+    ablations: list[dict[str, object]] = []
+    for horizon in horizons:
+        outcomes = _outcomes(frame, horizon)
+        targets = {
+            "volatility": (outcomes["forward_rv"] > frame["rv_20"]).astype(float),
+            "market": (outcomes["forward_return"] > 0).astype(float),
+        }
+        for axis, target in targets.items():
+            for position in range(160 + horizon, len(frame) - horizon):
+                if position % horizon:
+                    continue
+                train_end = position - horizon
+                train = families.iloc[: train_end + 1].copy()
+                train["target"] = target.iloc[: train_end + 1]
+                train = train.replace([np.inf, -np.inf], np.nan).dropna()
+                current = families.iloc[position]
+                if len(train) < 100 or current.isna().any():
+                    continue
+                x = train[names].to_numpy(dtype=float)
+                y = train["target"].to_numpy(dtype=float)
+                actual = float(target.iloc[position])
+                probability = _ridge_logit_predict(x, y, current.to_numpy(dtype=float))
+                predictions.append(
+                    {
+                        "date": frame.index[position],
+                        "horizon": horizon,
+                        "axis": axis,
+                        "position": position,
+                        "probability": probability,
+                        "actual": actual,
+                    }
+                )
+                full_loss = (probability - actual) ** 2
+                for dropped in names:
+                    retained = [name for name in names if name != dropped]
+                    reduced = _ridge_logit_predict(
+                        train[retained].to_numpy(dtype=float),
+                        y,
+                        current[retained].to_numpy(dtype=float),
+                    )
+                    ablations.append(
+                        {
+                            "horizon": horizon,
+                            "axis": axis,
+                            "position": position,
+                            "family": dropped,
+                            "full_brier": full_loss,
+                            "without_family_brier": (reduced - actual) ** 2,
+                        }
+                    )
+    prediction_frame = pd.DataFrame(predictions)
+    summary_rows: list[dict[str, object]] = []
+    calibration_rows: list[dict[str, object]] = []
+    if not prediction_frame.empty:
+        for keys, group in prediction_frame.groupby(["horizon", "axis"]):
+            horizon, axis = keys
+            baseline = float(group["actual"].mean())
+            clipped = group["probability"].clip(1e-6, 1 - 1e-6)
+            summary_rows.append(
+                {
+                    "horizon": horizon,
+                    "axis": axis,
+                    "n_eff": len(group),
+                    "brier": float(np.mean((clipped - group["actual"]) ** 2)),
+                    "baseline_brier": float(np.mean((baseline - group["actual"]) ** 2)),
+                    "log_loss": float(-np.mean(group["actual"] * np.log(clipped) + (1 - group["actual"]) * np.log(1 - clipped))),
+                    "mean_probability": float(clipped.mean()),
+                    "event_rate": baseline,
+                    "latest_probability": float(clipped.iloc[-1]),
+                    "status": "research/context",
+                }
+            )
+            bins = pd.cut(clipped, bins=[0, 0.4, 0.5, 0.6, 1], include_lowest=True)
+            for bucket, sample in group.groupby(bins, observed=True):
+                calibration_rows.append(
+                    {
+                        "horizon": horizon,
+                        "axis": axis,
+                        "probability_bin": str(bucket),
+                        "n": len(sample),
+                        "mean_probability": float(sample["probability"].mean()),
+                        "event_rate": float(sample["actual"].mean()),
+                    }
+                )
+    ablation_frame = pd.DataFrame(ablations)
+    if not ablation_frame.empty:
+        ablation_frame = (
+            ablation_frame.groupby(["horizon", "axis", "family"], as_index=False)
+            .agg(n_eff=("position", "size"), full_brier=("full_brier", "mean"), without_family_brier=("without_family_brier", "mean"))
+        )
+        ablation_frame["incremental_brier_value"] = (
+            ablation_frame["without_family_brier"] - ablation_frame["full_brier"]
+        )
+        ablation_frame["status"] = "research/context"
+    return pd.DataFrame(summary_rows), pd.DataFrame(calibration_rows), ablation_frame
 
 
 def _recommendation_findings(tables: dict[str, pd.DataFrame]) -> tuple[str, ...]:
@@ -958,6 +1184,9 @@ def run_research_backtest(
         )
     indicator_records = _indicator_records(frame, indicator_keys, horizons)
     strategy_records, sensitivity = _strategy_records(frame, horizons)
+    family_summary, family_calibration, family_ablation = (
+        _probabilistic_family_model(frame, horizons)
+    )
     tables = {
         "data_coverage": pd.DataFrame(
             [
@@ -972,6 +1201,10 @@ def run_research_backtest(
         ),
         "forecast_calibration": _forecast_table(frame, horizons),
         "har_rv_benchmark": _har_rv_benchmark(frame, horizons),
+        "indicator_nonoverlap_offsets": _offset_detail(indicator_records),
+        "probabilistic_family_oos": family_summary,
+        "probabilistic_family_calibration": family_calibration,
+        "probabilistic_family_ablation": family_ablation,
         **_indicator_tables(indicator_records),
         **_strategy_tables(strategy_records, sensitivity),
         "context_ablation_oos": _context_ablation(frame, horizons),
@@ -994,6 +1227,7 @@ def run_research_backtest(
             "forecast_rv_3d and expected_move_3d_points emit the same direction rule, so their similar results are duplicate evidence rather than independent confirmation.",
             "US series are made available on the following calendar day before as-of alignment, preserving Friday data for Sunday and preventing same-date Mon-Thu look-ahead.",
             "The current rule thresholds were not frozen before this historical sample. Treat discoveries as in-sample research and require a future frozen holdout before automatic deployment.",
+            "The family probability model uses one shrunk input per information family, strict label maturity, and one non-overlapping offset; its probabilities remain unapproved research outputs.",
         ),
     )
 
@@ -1034,6 +1268,10 @@ TABLE_TITLES = {
     "data_coverage": "Data coverage",
     "forecast_calibration": "Forecast calibration and probability-band coverage",
     "har_rv_benchmark": "Expanding HAR-RV benchmark and incremental VTA35 value",
+    "indicator_nonoverlap_offsets": "Every non-overlapping offset reported separately",
+    "probabilistic_family_oos": "Purged OOS probability model by information family",
+    "probabilistic_family_calibration": "Probability calibration by forecast bin",
+    "probabilistic_family_ablation": "Incremental OOS value of each information family",
     "indicator_aggregate": "Indicator aggregate direction tests",
     "indicator_by_arrow": "Indicator results for every emitted arrow",
     "indicator_intensity": "Indicator intensity / threshold sensitivity",

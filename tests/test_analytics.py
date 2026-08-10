@@ -2,13 +2,21 @@ import math
 import unittest
 
 from ta35_dashboard.analytics import (
+    downside_variance_share,
     ewma_volatility_forecast,
     expected_move,
     gap_variance_share,
+    gjr_eod_forecast,
+    har_eod_forecast,
+    implied_vol_of_vol,
     parkinson_volatility,
     percentile_rank,
     probability_band,
     realized_volatility,
+    rogers_satchell_acceleration,
+    trend_efficiency,
+    variance_risk_premium,
+    volatility_scaled_reversal,
     volatility_ratio,
     volatility_spread,
     yang_zhang_volatility,
@@ -59,6 +67,25 @@ class LiteAnalyticsTests(unittest.TestCase):
         self.assertIsNone(parkinson_volatility([1], [1]).value)
         self.assertIsNone(volatility_ratio(20, 0).value)
         self.assertIsNone(probability_band(2500, 0.16, 3, -1))
+
+    def test_research_features_and_forecasts_are_finite(self):
+        returns = [0.01, -0.02, 0.005, -0.01]
+        self.assertTrue(0 <= downside_variance_share(returns).value <= 1)
+        self.assertGreater(implied_vol_of_vol([18, 19, 17, 20]).value, 0)
+        opens = [100 + index * 0.2 for index in range(20)]
+        closes = [value + (0.4 if index % 2 else -0.2) for index, value in enumerate(opens)]
+        highs = [max(left, right) + 1 for left, right in zip(opens, closes, strict=True)]
+        lows = [min(left, right) - 1 for left, right in zip(opens, closes, strict=True)]
+        self.assertGreater(
+            rogers_satchell_acceleration(opens, highs, lows, closes).value, 0
+        )
+        prices = [100 * math.exp(0.001 * index + 0.01 * math.sin(index)) for index in range(150)]
+        self.assertIsNotNone(har_eod_forecast(prices).value)
+        log_returns = [math.log(prices[index] / prices[index - 1]) for index in range(1, len(prices))]
+        self.assertIsNotNone(gjr_eod_forecast(log_returns).value)
+        self.assertTrue(-1 <= trend_efficiency(prices[-21:]).value <= 1)
+        self.assertIsNotNone(volatility_scaled_reversal(prices[-6:], 0.2).value)
+        self.assertAlmostEqual(variance_risk_premium(0.2, 0.15).value, 0.0175)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from ta35_dashboard.analytics import (
+    downside_variance_share,
     direction,
     ewma_volatility_forecast,
     gap_variance_share,
@@ -232,6 +233,29 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     atr20 = true_range.rolling(20).mean() / close
     ta["atr_5_20_ratio"] = atr5 / atr20
 
+    ta["downside_share_20"] = returns.rolling(20).apply(
+        lambda values: downside_variance_share(values).value, raw=True
+    )
+    rs_daily = (
+        np.log(ta["high"] / ta["close"]) * np.log(ta["high"] / ta["open"])
+        + np.log(ta["low"] / ta["close"]) * np.log(ta["low"] / ta["open"])
+    ).clip(lower=0)
+    ta["rs_range_5_20"] = np.sqrt(
+        rs_daily.rolling(5).mean() / rs_daily.rolling(20).mean()
+    ).replace([np.inf, -np.inf], np.nan)
+    log_price = np.log(close)
+    absolute_path = returns.abs().rolling(20).sum()
+    ta["trend_efficiency_20"] = (
+        (log_price - log_price.shift(20)) / absolute_path
+    ).replace([np.inf, -np.inf], np.nan)
+    ta["range_position_20"] = range_position = (
+        (close - close.rolling(20).min())
+        / (close.rolling(20).max() - close.rolling(20).min())
+    ).replace([np.inf, -np.inf], np.nan)
+    ta["reversal_5_vol_scaled"] = (
+        -(log_price - log_price.shift(5)) / (ta["rv_20"] * math.sqrt(5 / 252))
+    ).replace([np.inf, -np.inf], np.nan)
+
     candidates = pd.concat(
         [ta["rv_5"], ta["rv_20"], ta["rv_ewma"], ta["rv_yang_zhang_20"]],
         axis=1,
@@ -247,6 +271,7 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
         vta_frame = pd.DataFrame(index=vta.index)
         vta_frame["vta35"] = vta_close
         vta_frame["vta35_change_5d"] = vta_close.pct_change(5)
+        vta_frame["vta_vol_of_vol_20"] = np.log(vta_close).diff().rolling(20).std(ddof=1)
         mean60 = vta_close.rolling(60).mean()
         std60 = vta_close.rolling(60).std(ddof=1)
         vta_frame["vta35_zscore_60"] = (vta_close - mean60) / std60
@@ -261,6 +286,7 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
             "vta35_change_5d",
             "vta35_zscore_60",
             "vta35_percentile_252",
+            "vta_vol_of_vol_20",
         ):
             ta[column] = np.nan
     ta["vrp_spread"] = ta["vta35"] / 100 - ta["rv_20"]
@@ -305,6 +331,67 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     ta["vix_curve_ratio"] = aligned["VIX9D"] / aligned["VIX3M"]
     ta["vix9d_vix_ratio"] = aligned["VIX9D"] / aligned["VIX"]
     ta["vix_vix3m_ratio"] = aligned["VIX"] / aligned["VIX3M"]
+    local_mean = ta["vta35"].rolling(252, min_periods=120).mean()
+    local_std = ta["vta35"].rolling(252, min_periods=120).std(ddof=1)
+    global_mean = aligned["VIX"].rolling(252, min_periods=120).mean()
+    global_std = aligned["VIX"].rolling(252, min_periods=120).std(ddof=1)
+    ta["local_global_stress_spread"] = (
+        (ta["vta35"] - local_mean) / local_std
+        - (aligned["VIX"] - global_mean) / global_std
+    )
+
+    # Fixed-parameter GJR is a benchmark, not an automatically selected model.
+    variance = float(returns.dropna().iloc[:30].var(ddof=0)) if returns.notna().sum() >= 30 else np.nan
+    gjr_values = np.full(len(ta), np.nan)
+    unconditional = variance
+    if math.isfinite(variance):
+        omega = unconditional * (1 - 0.06 - 0.08 / 2 - 0.86)
+        for position, residual in enumerate(returns.fillna(0).to_numpy(dtype=float)):
+            variance = omega + 0.06 * residual**2 + 0.08 * residual**2 * (residual < 0) + 0.86 * variance
+            if position >= 30:
+                gjr_values[position] = math.sqrt(max(variance, 0) * 252)
+    ta["gjr_rv_1d"] = gjr_values
+
+    har_features = pd.DataFrame(
+        {
+            "const": 1.0,
+            "daily": np.log((returns.abs() * math.sqrt(252)).clip(lower=1e-6)),
+            "weekly": np.log(
+                (returns.abs() * math.sqrt(252)).rolling(5).mean().clip(lower=1e-6)
+            ),
+            "monthly": np.log(
+                (returns.abs() * math.sqrt(252)).rolling(22).mean().clip(lower=1e-6)
+            ),
+        },
+        index=ta.index,
+    )
+    har_target = _outcomes(ta, 3)["forward_rv"]
+    har_values = np.full(len(ta), np.nan)
+    beta: np.ndarray | None = None
+    har_columns = ["const", "daily", "weekly", "monthly"]
+    for position in range(123, len(ta)):
+        # Refit weekly; between fits the last fully matured coefficient vector
+        # remains a valid, deliberately stale OOS forecast.
+        if beta is None or position % 5 == 0:
+            train_end = position - 3
+            train = har_features.iloc[: train_end + 1].copy()
+            train["target"] = np.log(
+                har_target.iloc[: train_end + 1].clip(lower=1e-6)
+            )
+            train = train.replace([np.inf, -np.inf], np.nan).dropna()
+            if len(train) >= 80:
+                beta = np.linalg.lstsq(
+                    train[har_columns].to_numpy(),
+                    train["target"].to_numpy(),
+                    rcond=None,
+                )[0]
+        current = har_features.iloc[position]
+        if beta is not None and current[har_columns].notna().all():
+            har_values[position] = math.exp(
+                float(current[har_columns].to_numpy() @ beta)
+            )
+    ta["har_rv_3d"] = har_values
+    ta["matched_vrp_3d"] = (ta["vta35"] / 100) ** 2 - ta["har_rv_3d"] ** 2
 
     vol_inputs = pd.DataFrame(
         {
@@ -327,8 +414,7 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     ta["volatility_direction_score"] = vol_inputs.mean(axis=1)
 
     ma20, ma60 = close.rolling(20).mean(), close.rolling(60).mean()
-    low20, high20 = close.rolling(20).min(), close.rolling(20).max()
-    range_position = (close - low20) / (high20 - low20)
+    range_position = ta["range_position_20"]
     trend_inputs = pd.DataFrame(
         {
             "ma20": np.where(close >= ma20, 1, -1),

@@ -64,6 +64,26 @@ state_right.metric(
     ),
 )
 
+st.subheader("תחזית הסתברותית — Research/Context")
+probability_rows = [
+    row for row in data.family_probabilities if int(row.get("horizon", 0)) in {3, 7}
+]
+if probability_rows:
+    probability_columns = st.columns(len(probability_rows))
+    for column, row in zip(probability_columns, probability_rows, strict=False):
+        axis_label = "RV יעלה" if row["axis"] == "volatility" else "ת״א־35 יעלה"
+        column.metric(
+            f"P({axis_label}) · {int(row['horizon'])} ימים",
+            f"{float(row['latest_probability']):.1%}",
+            delta=f"Brier {float(row['brier']):.3f}",
+            help=(
+                "מודל ridge מצומצם עם קול אחד מכל משפחת מידע, purge של התווית "
+                "ומדגם OOS לא־חופף. הוא מוצג למחקר בלבד ואינו מפעיל המלצה."
+            ),
+        )
+else:
+    st.info("אין עדיין מדגם OOS מספיק לתחזית הסתברותית.")
+
 st.subheader("המלצת אסטרטגיה כללית")
 st.caption(
     "בחירת משפחת אסטרטגיה לפי מצב המגמה, התנודתיות והתמחור היחסי. "
@@ -353,6 +373,27 @@ with st.expander("Ablation OOS — מט״ח–מניות ומתאם TA35–VTA35
         )
     else:
         st.info("אין מדגם מספיק לבדיקת התרומה השולית.")
+
+with st.expander("השוואת מודלי תנודתיות OOS — QLIKE ו־MSE", expanded=False):
+    if data.volatility_model_comparison:
+        model_frame = pd.DataFrame(data.volatility_model_comparison)
+        selected_columns = [
+            "horizon",
+            "model",
+            "n_eff",
+            "qlike",
+            "mse_variance",
+            "qlike_improvement_vs_naive",
+            "block_bootstrap_p",
+        ]
+        st.dataframe(model_frame[selected_columns], hide_index=True, width="stretch")
+        st.caption(
+            "HAR, HAR-X, GJR, VTA35, התחזית המשולבת ו־RV20 נבדקים על תוויות "
+            "שהבשילו ובמדגם לא־חופף. p-value הוא moving-block bootstrap אבחוני; "
+            "אף מודל אינו מקבל סמכות פריסה מהמדגם ההיסטורי."
+        )
+    else:
+        st.info("אין מדגם מספיק להשוואת המודלים.")
 
 left, right = st.columns(2)
 with left:

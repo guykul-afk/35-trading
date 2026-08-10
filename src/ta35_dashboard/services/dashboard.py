@@ -89,6 +89,8 @@ class DashboardBundle:
     premium_evidence: EvidenceCard
     regime_matrix: RegimeMatrix
     context_ablation: tuple[dict[str, object], ...]
+    family_probabilities: tuple[dict[str, object], ...]
+    volatility_model_comparison: tuple[dict[str, object], ...]
 
 
 CARD_DEFINITIONS = (
@@ -310,6 +312,119 @@ EWMA ל־60 תשואות עם מקדם דעיכה 0.94, ו־Yang–Zhang ל־20 
     ),
 )
 
+def _research_help(what: str, construction: str, interpretation: str, caution: str) -> str:
+    return (
+        f"**מהו המדד?** {what}\n\n"
+        f"**איך הוא בנוי?** {construction}\n\n"
+        f"**איך מפרשים?** {interpretation}\n\n"
+        f"**חשוב לדעת:** {caution}"
+    )
+
+
+RESEARCH_CARD_DEFINITIONS = (
+    (
+        "downside_share_20",
+        "חלק שונות שלילית 20",
+        ".0%",
+        _research_help(
+            "חלק התנודתיות שנוצר בימי ירידה.",
+            "סכום ריבועי התשואות השליליות חלקי סכום כל ריבועי התשואות ב־20 יום.",
+            "מעל 50% מצביע שרוב השונות הגיעה מירידות ועשוי להקדים התמדה בתנודתיות.",
+            "זו גרסת EOD ל־realized semivariance; Research/Context בלבד.",
+        ),
+    ),
+    (
+        "vta_vol_of_vol_20",
+        "Vol-of-Vol של VTA35",
+        ".2%",
+        _research_help(
+            "אי־היציבות של התנודתיות הגלומה עצמה.",
+            "סטיית התקן של 20 שינויי לוג יומיים ב־VTA35.",
+            "ערך גבוה מסמן IV שמשנה מצב במהירות ועשוי להצביע על מעבר משטר.",
+            "נדרש ערך מוסף OOS מעבר לרמת VTA35 ולשינוי השבועי; Research בלבד.",
+        ),
+    ),
+    (
+        "rs_range_5_20",
+        "Rogers–Satchell 5/20",
+        ".2f",
+        _research_help(
+            "האצת תנודתיות מבוססת טווח OHLC.",
+            "שורש היחס בין שונות Rogers–Satchell לחמישה ולעשרים ימים.",
+            "מעל 1 מצביע על התרחבות הטווח הקצר.",
+            "זהו proxy יומי ולא realized volatility תוך־יומי; Research בלבד.",
+        ),
+    ),
+    (
+        "local_global_stress_spread",
+        "פער לחץ מקומי–גלובלי",
+        ".2f",
+        _research_help(
+            "חריגות VTA35 המקומית לעומת VIX הגלובלי.",
+            "z-score מתגלגל של VTA35 פחות z-score של VIX הזמין בישראל.",
+            "חיובי פירושו לחץ מקומי עודף.",
+            "סגירת ארה״ב מוזחת ליום הבא כדי למנוע look-ahead; Context בלבד.",
+        ),
+    ),
+    (
+        "trend_efficiency_20",
+        "יעילות מגמה 20",
+        ".2f",
+        _research_help(
+            "כמה מהמסלול היומי הפך לתנועה נטו.",
+            "תשואת לוג ל־20 יום חלקי סכום התשואות המוחלטות.",
+            "ערך מוחלט גבוה מציין מגמה נקייה; קרוב לאפס מציין רעש.",
+            "משמש פילטר משטר ולא חץ קנייה או מכירה.",
+        ),
+    ),
+    (
+        "range_position_20",
+        "מיקום בטווח 20",
+        ".0%",
+        _research_help(
+            "מיקום הסגירה בין השפל והשיא של 20 יום.",
+            "מחיר פחות שפל, חלקי הטווח שיא פחות שפל.",
+            "0% הוא תחתית הטווח ו־100% הוא ראשו.",
+            "נבדק עם יעילות המגמה כפילטר trend/reversal, לא כהצבעה עצמאית.",
+        ),
+    ),
+    (
+        "reversal_5_vol_scaled",
+        "תיקון 5 ימים מנורמל",
+        ".2f",
+        _research_help(
+            "מהלך נגדי לתשואת חמשת הימים ביחידות תנודתיות.",
+            "מינוס תשואת הלוג ל־5 ימים חלקי RV20 כפול שורש 5/252.",
+            "קיצון חיובי מצביע על מועמד לתיקון כלפי מעלה ולהפך.",
+            "המדגם המקומי הוא discovery בלבד; אין אות בלי קיצון ו־OOS עתידי.",
+        ),
+    ),
+    (
+        "har_rv_3d",
+        "HAR-EOD ל־3 ימים",
+        ".1%",
+        _research_help(
+            "benchmark רב־אופקי לתנודתיות העתידית.",
+            "רגרסיית log-RV על רכיבים יומי, שבועי וחודשי ורק תוויות שכבר הבשילו.",
+            "משווים ל־RV20 ולתחזיות האחרות.",
+            "זהו proxy EOD ל־HAR-RV, לא HAR על נתוני תוך־יום.",
+        ),
+    ),
+    (
+        "matched_vrp_3d",
+        "VRP מותאם אופק",
+        ".2%",
+        _research_help(
+            "פרמיית שונות ביחידות עקביות ובאותו אופק.",
+            "ריבוע IV פחות ריבוע תחזית השונות הפיזית HAR.",
+            "חיובי מצביע שתמחור השונות הגלומה גבוה מהתחזית הפיזית.",
+            "אינו היתר למכירת פרמיה ואינו נבדק כ־P&L אופציות.",
+        ),
+    ),
+)
+
+CARD_DEFINITIONS = CARD_DEFINITIONS + RESEARCH_CARD_DEFINITIONS
+
 
 def load_dashboard_bundle(
     repository: SQLiteRepository, *, now: datetime | None = None
@@ -429,6 +544,8 @@ def load_dashboard_bundle(
         else "מעורבת"
     )
     ablation = research.tables.get("context_ablation_oos")
+    family_probabilities = research.tables.get("probabilistic_family_oos")
+    volatility_models = research.tables.get("har_rv_benchmark")
     return DashboardBundle(
         meta=SnapshotMeta(
             snapshot.session_date,
@@ -472,6 +589,16 @@ def load_dashboard_bundle(
         context_ablation=(
             tuple(ablation.to_dict(orient="records"))
             if ablation is not None and not ablation.empty
+            else ()
+        ),
+        family_probabilities=(
+            tuple(family_probabilities.to_dict(orient="records"))
+            if family_probabilities is not None and not family_probabilities.empty
+            else ()
+        ),
+        volatility_model_comparison=(
+            tuple(volatility_models.to_dict(orient="records"))
+            if volatility_models is not None and not volatility_models.empty
             else ()
         ),
     )

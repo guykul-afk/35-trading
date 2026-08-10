@@ -1,4 +1,10 @@
 from .results import MODEL_VERSION, ScalarResult
+from .forecasting import (
+    gjr_eod_forecast,
+    har_eod_forecast,
+    qlike,
+    variance_risk_premium,
+)
 from .signals import arrow, direction, heuristic_strength, indicator_signal
 from .strategies import (
     StrategyCandidate,
@@ -6,13 +12,18 @@ from .strategies import (
     recommend_strategy,
 )
 from .volatility import (
+    downside_variance_share,
     ewma_volatility_forecast,
     expected_move,
     gap_variance_share,
+    implied_vol_of_vol,
     parkinson_volatility,
     percentile_rank,
     probability_band,
     realized_volatility,
+    rogers_satchell_acceleration,
+    trend_efficiency,
+    volatility_scaled_reversal,
     volatility_ratio,
     volatility_spread,
     yang_zhang_volatility,
@@ -26,18 +37,27 @@ __all__ = [
     "StrategyRecommendation",
     "arrow",
     "direction",
+    "downside_variance_share",
     "ewma_volatility_forecast",
     "expected_move",
     "gap_variance_share",
+    "gjr_eod_forecast",
+    "har_eod_forecast",
+    "implied_vol_of_vol",
     "heuristic_strength",
     "indicator_signal",
     "parkinson_volatility",
     "percentile_rank",
     "probability_band",
+    "qlike",
     "realized_volatility",
+    "rogers_satchell_acceleration",
     "recommend_strategy",
     "volatility_ratio",
+    "trend_efficiency",
+    "volatility_scaled_reversal",
     "volatility_spread",
+    "variance_risk_premium",
     "yang_zhang_volatility",
     "zscore",
 ]

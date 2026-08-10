@@ -1,8 +1,30 @@
 {
-  "schema_version": "1.0",
-  "status": "disabled_pending_validation",
-  "source_commit": "bd85b07378f8e6fa38df687b771e2578d0c68e45",
-  "evaluation_start": null,
-  "rules": [],
-  "note": "Populate only before a forward-only evaluation; historical selection must not modify a frozen rule."
+  "schema_version": "2.0",
+  "status": "forward_evaluation_only_no_deployment_authority",
+  "source_commit": "working-tree-2026-08-10-additional-indicators",
+  "frozen_at": "2026-08-10T00:00:00+03:00",
+  "evaluation_start": "2026-08-11",
+  "rules": [
+    {"key": "downside_share_20", "formula": "sum(min(r,0)^2,20)/sum(r^2,20)", "family": "rv_local", "target": "future_rv"},
+    {"key": "vta_vol_of_vol_20", "formula": "std(diff(log(VTA35)),20)", "family": "iv_local", "target": "future_rv"},
+    {"key": "rs_range_5_20", "formula": "sqrt(mean(RS,5)/mean(RS,20))", "family": "rv_local", "target": "future_rv"},
+    {"key": "local_global_stress_spread", "formula": "z252(VTA35)-z252(VIX_available_in_Israel)", "family": "global_fx", "target": "future_rv"},
+    {"key": "trend_efficiency_20", "formula": "log_return_20/sum(abs(log_return),20)", "family": "price_regime", "target": "regime_filter"},
+    {"key": "range_position_20", "formula": "(close-low20)/(high20-low20)", "family": "price_regime", "target": "regime_filter"},
+    {"key": "reversal_5_vol_scaled", "formula": "-log_return_5/(RV20*sqrt(5/252))", "family": "price_regime", "target": "forward_return"},
+    {"key": "har_rv_3d", "formula": "expanding_log_HAR_EOD_daily_weekly_monthly", "family": "rv_local", "target": "future_rv"},
+    {"key": "matched_vrp_3d", "formula": "(VTA35/100)^2-HAR_physical_forecast^2", "family": "forecast_gap", "target": "variance_premium"}
+  ],
+  "horizons": [3, 7, 14, 30],
+  "validation": {
+    "walk_forward": "expanding",
+    "purge": "equal_to_label_horizon",
+    "embargo": 30,
+    "losses_volatility": ["QLIKE", "variance_MSE"],
+    "losses_direction": ["Brier", "log_loss", "calibration"],
+    "multiple_testing": "moving_block_bootstrap_plus_Holm",
+    "nonoverlap": "report_every_offset_separately"
+  },
+  "deployment_gate": "closed_until_new_forward_sample_and_manual_review",
+  "note": "The pre-2026-08-11 sample is discovery only. No rule, probability, strength or strategy gate may be activated from that history."
 }

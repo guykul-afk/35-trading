@@ -10,12 +10,20 @@ import numpy as np
 
 from ta35_dashboard.analytics import (
     MODEL_VERSION,
+    downside_variance_share,
     ewma_volatility_forecast,
     expected_move,
     gap_variance_share,
+    gjr_eod_forecast,
+    har_eod_forecast,
+    implied_vol_of_vol,
     parkinson_volatility,
     percentile_rank,
     realized_volatility,
+    rogers_satchell_acceleration,
+    trend_efficiency,
+    variance_risk_premium,
+    volatility_scaled_reversal,
     volatility_ratio,
     volatility_spread,
     yang_zhang_volatility,
@@ -70,6 +78,8 @@ def compute_latest_metrics(
     returns = _returns(closes)
     ewma = ewma_volatility_forecast(returns[-60:])
     add("rv_ewma", ewma.value, ewma.quality_flags)
+    downside = downside_variance_share(returns[-20:])
+    add("downside_share_20", downside.value, downside.quality_flags, proxy="EOD")
 
     ohlc = [bar for bar in ta[-20:] if None not in (bar.open, bar.high, bar.low)]
     if len(ohlc) == min(20, len(ta)) and len(ohlc) >= 3:
@@ -80,13 +90,17 @@ def compute_latest_metrics(
         yz = yang_zhang_volatility(opens, highs, lows, ohlc_closes)
         park = parkinson_volatility(highs, lows)
         gap = gap_variance_share(opens, ohlc_closes)
+        rs_acceleration = rogers_satchell_acceleration(
+            opens, highs, lows, ohlc_closes
+        )
     else:
-        yz = park = gap = type(
+        yz = park = gap = rs_acceleration = type(
             "Missing", (), {"value": None, "quality_flags": ("missing_ohlc",)}
         )()
     add("rv_yang_zhang_20", yz.value, yz.quality_flags)
     add("rv_parkinson_20", park.value, park.quality_flags)
     add("gap_share_20", gap.value, gap.quality_flags)
+    add("rs_range_5_20", rs_acceleration.value, rs_acceleration.quality_flags)
 
     acceleration = rv[5] / rv[20] if rv[5] is not None and rv[20] else None
     add(
@@ -124,9 +138,15 @@ def compute_latest_metrics(
         atr_acceleration,
         () if atr_acceleration is not None else ("missing_ohlc_or_history",),
     )
+    har = har_eod_forecast(closes, horizon=3)
+    gjr = gjr_eod_forecast(returns[-252:])
+    add("har_rv_3d", har.value, har.quality_flags, proxy="EOD", status="research")
+    add("gjr_rv_1d", gjr.value, gjr.quality_flags, proxy="fixed_parameter_EOD", status="benchmark")
     candidates = [
         value for value in (rv[5], rv[20], ewma.value, yz.value) if value is not None
     ]
+    if har.value is not None:
+        candidates.append(har.value)
     forecast = median(candidates) if candidates else None
     add("forecast_rv_3d", forecast)
     move = expected_move(closes[-1], forecast, 3) if forecast is not None else None
@@ -158,6 +178,13 @@ def compute_latest_metrics(
         vta_z60.value if vta_z60 else None,
         vta_z60.quality_flags if vta_z60 else ("insufficient_history",),
     )
+    vta_vol_of_vol = implied_vol_of_vol(vta_values[-21:])
+    add(
+        "vta_vol_of_vol_20",
+        vta_vol_of_vol.value,
+        vta_vol_of_vol.quality_flags,
+        status="research",
+    )
     if current_vta is not None and rv[20] is not None:
         spread = volatility_spread(current_vta, rv[20])
         ratio = volatility_ratio(current_vta, rv[20])
@@ -166,6 +193,31 @@ def compute_latest_metrics(
     else:
         add("vrp_spread", None, ("missing_vta35_or_rv",))
         add("vrp_ratio", None, ("missing_vta35_or_rv",))
+    matched_vrp = (
+        variance_risk_premium(current_vta / 100, har.value)
+        if current_vta is not None and har.value is not None
+        else None
+    )
+    add(
+        "matched_vrp_3d",
+        matched_vrp.value if matched_vrp else None,
+        matched_vrp.quality_flags if matched_vrp else ("missing_vta35_or_har",),
+        status="research",
+    )
+
+    efficiency = trend_efficiency(closes[-21:])
+    reversal = (
+        volatility_scaled_reversal(closes[-6:], rv[20])
+        if rv[20] is not None
+        else None
+    )
+    add("trend_efficiency_20", efficiency.value, efficiency.quality_flags, status="context")
+    add(
+        "reversal_5_vol_scaled",
+        reversal.value if reversal else None,
+        reversal.quality_flags if reversal else ("missing_rv20",),
+        status="context",
+    )
 
     usd = repository.bar_history("USDILS", 252)
     usd_values = [bar.close for bar in usd]
@@ -185,6 +237,11 @@ def compute_latest_metrics(
     vix9, vix, vix3 = (
         repository.bar_history(symbol, 252) for symbol in ("VIX9D", "VIX", "VIX3M")
     )
+    # A US close dated on the Israeli session is not observable until later
+    # that evening. Keep only strictly earlier US sessions for the live metric.
+    vix9 = [bar for bar in vix9 if bar.session_date < snapshot.session_date]
+    vix = [bar for bar in vix if bar.session_date < snapshot.session_date]
+    vix3 = [bar for bar in vix3 if bar.session_date < snapshot.session_date]
     curve = vix9[-1].close / vix3[-1].close if vix9 and vix3 else None
     add("vix_curve_ratio", curve, () if curve is not None else ("missing_vix_curve",))
     vix9_vix = vix9[-1].close / vix[-1].close if vix9 and vix else None
@@ -214,6 +271,12 @@ def compute_latest_metrics(
         "local_stress_premium",
         premium,
         () if premium is not None else ("missing_stress_history",),
+    )
+    add(
+        "local_global_stress_spread",
+        premium,
+        () if premium is not None else ("missing_stress_history",),
+        status="research",
     )
 
     score = 0
@@ -299,6 +362,12 @@ def compute_latest_metrics(
         (closes[-1] - min(range20)) / (max(range20) - min(range20))
         if range20 and max(range20) > min(range20)
         else None
+    )
+    add(
+        "range_position_20",
+        range_position,
+        () if range_position is not None else ("insufficient_history",),
+        status="context",
     )
     trend_votes = [
         1 if value else -1

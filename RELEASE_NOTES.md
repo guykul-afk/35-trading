@@ -1,3 +1,19 @@
+# Release 2.0.0 — additional indicators and strict forecast validation
+
+- Added nine frozen `Research/Context` candidates derived only from existing
+  Lite EOD data, without adding duplicate technical-indicator votes.
+- Added live HAR-EOD, fixed-parameter GJR and horizon-matched variance-premium
+  metrics, plus downside share, VTA35 vol-of-vol, Rogers-Satchell acceleration,
+  local-global stress, trend efficiency, range position and scaled reversal.
+- Rebuilt volatility-model evaluation around purged expanding OOS predictions,
+  one non-overlapping offset, QLIKE, variance MSE and moving-block bootstrap.
+- Added HAR-X with only downside share, VTA35 and local-global stress, plus an
+  L2-shrunk five-family probability model, calibration and OOS ablation.
+- Added every non-overlapping offset as a separate report table and froze the
+  formulas for forward-only evaluation from 2026-08-11.
+- Kept every new output context-only; premium-sale eligibility, strength scores
+  and automated deployment remain hard-closed.
+
 # Release 1.5.0 — comprehensive backtest research
 
 - Standardized dashboard and research horizons on 3, 7, 14 and 30 trading days.

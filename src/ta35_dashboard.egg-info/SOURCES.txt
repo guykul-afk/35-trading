@@ -8,6 +8,7 @@ src/ta35_dashboard.egg-info/dependency_links.txt
 src/ta35_dashboard.egg-info/requires.txt
 src/ta35_dashboard.egg-info/top_level.txt
 src/ta35_dashboard/analytics/__init__.py
+src/ta35_dashboard/analytics/forecasting.py
 src/ta35_dashboard/analytics/results.py
 src/ta35_dashboard/analytics/signals.py
 src/ta35_dashboard/analytics/strategies.py

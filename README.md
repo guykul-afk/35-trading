@@ -14,17 +14,24 @@ credential, order-entry or real-time code.
 - IV–RV spread/ratio when VTA35 is available.
 - USD/ILS pressure and the VIX9D/VIX3M global volatility curve.
 - RV20/RV60 structure, normalized ATR5/ATR20 range pressure and VTA35 momentum.
+- Nine frozen research candidates: downside-variance share, VTA35 vol-of-vol,
+  Rogers-Satchell acceleration, local-global stress spread, trend efficiency,
+  range position, volatility-scaled reversal, HAR-EOD and horizon-matched VRP.
+- Strict non-overlapping expanding OOS comparison of RV20, the combined forecast,
+  VTA35, fixed-parameter GJR, HAR and HAR-X using QLIKE and variance MSE.
+- A five-family L2-shrunk probability model for `P(RV rises)` and `P(TA35 rises)`,
+  with label purge, Brier/log loss, calibration bins and family ablation.
 - Separate VIX9D/VIX and VIX/VIX3M curve segments.
-- Per-indicator volatility and conservative TA-35 direction arrows with separate
-  empirical 1–10 strength scores. Scores use walk-forward matching-signal hit
-  rates versus historical base rates, Bayesian shrinkage and sample-size
-  penalties; neutral TA-35 arrows are shown where direction cannot be inferred
-  responsibly.
+- Per-indicator volatility and conservative TA-35 direction arrows. Historical
+  diagnostics are shown as `Research/Context`; 1–10 deployment scores and all
+  automatic evidence gates remain disabled until a new frozen forward sample
+  passes review.
 - Full-history indicator and strategy-scenario backtest tables for 3/7/14/30
   trading days, including hit rates, sample sizes and sample-quality labels.
 - A reproducible comprehensive research report (`scripts/generate_backtest_research.py`)
-  covering direction, calibration, intensity, non-overlapping robustness,
-  year/regime stability, multiple-testing control and strategy-band sensitivity.
+  covering direction, every non-overlapping offset, calibration, QLIKE/MSE,
+  moving-block bootstrap, family ablation, year/regime stability,
+  multiple-testing control and strategy-band sensitivity.
 - A general option-strategy family, selectable 3/7/14/30-day scenario range and
   bounded-risk alternatives; no strikes, option prices or orders are selected.
 - A transparent four-state stress regime and per-series data health.
@@ -65,6 +72,10 @@ python scripts/generate_backtest_research.py
 
 The command writes all 3/7/14/30-day indicator, forecast and strategy-scenario
 results to `docs/backtest-research-report.md`.
+
+`frozen_rules.json` fixes the candidate formulas before the forward evaluation
+beginning 2026-08-11. It explicitly grants no deployment authority: the entire
+earlier history remains a discovery sample.
 
 ## Import free official data
 
