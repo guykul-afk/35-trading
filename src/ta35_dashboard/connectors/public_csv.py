@@ -35,7 +35,20 @@ def _key(value: object) -> str:
 
 
 ALIASES = {
-    "date": {"date", "tradedate", "sessiondate", "timeperiod", "תאריך", "תאריךמסחר"},
+    "date": {
+        "date",
+        "datetime",
+        "tradedate",
+        "tradingdate",
+        "sessiondate",
+        "timeperiod",
+        "timestamp",
+        "תאריך",
+        "תאריךמסחר",
+        "תאריךהמסחר",
+        "תאריךושעה",
+        "מועדתאריך",
+    },
     "open": {"open", "opening", "openingrate", "שערפתיחה", "פתיחה"},
     "high": {"high", "highrate", "שערגבוה", "גבוה"},
     "low": {"low", "lowrate", "שערנמוך", "נמוך"},
@@ -72,6 +85,17 @@ def _column(frame: pd.DataFrame, name: str, required: bool = True) -> str | None
     for alias in ALIASES[name]:
         if _key(alias) in normalized:
             return normalized[_key(alias)]
+    # TASE exports have used small label variations over time (for example
+    # "תאריך המסחר" rather than "תאריך מסחר").  After exact aliases, accept
+    # unambiguous headers which contain a date/time marker.
+    if name == "date":
+        matches = [
+            original
+            for key, original in normalized.items()
+            if any(marker in key for marker in ("date", "time", "תאריך", "מועד"))
+        ]
+        if len(matches) == 1:
+            return matches[0]
     if required:
         raise ValueError(f"CSV is missing a recognizable {name} column")
     return None
@@ -102,7 +126,9 @@ def read_series(spec: CsvSeriesSpec) -> tuple[DailyBar, ...]:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         text = raw.decode("cp1255")
-    frame = pd.read_csv(StringIO(_csv_table(text)))
+    # The official site has supplied both comma and semicolon-separated CSVs.
+    # Let pandas detect the separator after stripping any export preamble.
+    frame = pd.read_csv(StringIO(_csv_table(text)), sep=None, engine="python")
     date_col = _column(frame, "date")
     close_col = _column(frame, "close")
     open_col = _column(frame, "open", required=False)

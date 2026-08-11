@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 from datetime import UTC, date, datetime
 from itertools import pairwise
+from pathlib import Path
 from statistics import median
 
 import numpy as np
@@ -408,8 +412,7 @@ def collect_once(
     as_of: datetime | None = None,
 ) -> MarketSnapshot:
     snapshot = provider.fetch_snapshot(as_of)
-    repository.insert_snapshot(snapshot)
-    repository.insert_metrics(compute_latest_metrics(repository, snapshot))
+    _activate_refresh(repository, (snapshot,))
     return snapshot
 
 
@@ -421,8 +424,42 @@ def collect_history(
     end: date | None = None,
 ) -> list[str]:
     snapshots = provider.fetch_history(start=start, end=end)
-    for snapshot in snapshots:
-        repository.insert_snapshot(snapshot)
     if snapshots:
-        repository.insert_metrics(compute_latest_metrics(repository, snapshots[-1]))
+        _activate_refresh(repository, tuple(snapshots))
     return [snapshot.run_id for snapshot in snapshots]
+
+
+def _activate_refresh(
+    repository: SQLiteRepository, snapshots: tuple[MarketSnapshot, ...]
+) -> None:
+    """Build a complete refresh off-line and replace the DB only on success."""
+
+    database_path = repository.path
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, staged_name = tempfile.mkstemp(
+        prefix=f".{database_path.stem}-refresh-",
+        suffix=database_path.suffix or ".sqlite3",
+        dir=database_path.parent,
+    )
+    os.close(descriptor)
+    staged_path = Path(staged_name)
+    try:
+        if database_path.exists():
+            shutil.copy2(database_path, staged_path)
+        staged_repository = SQLiteRepository(staged_path)
+        for snapshot in snapshots:
+            staged_repository.insert_snapshot(snapshot)
+        metrics = compute_latest_metrics(staged_repository, snapshots[-1])
+        if not metrics:
+            raise RuntimeError("Analytics refresh produced no metrics; database unchanged.")
+        staged_repository.insert_metrics(metrics)
+        if not staged_repository.latest_metrics():
+            raise RuntimeError("Analytics refresh was not persisted; database unchanged.")
+        import gc
+        gc.collect()
+        os.replace(staged_path, database_path)
+    finally:
+        import gc
+        gc.collect()
+        staged_path.unlink(missing_ok=True)
+

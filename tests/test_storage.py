@@ -18,7 +18,10 @@ class StorageTests(unittest.TestCase):
             repository.insert_snapshot(snapshot)
             self.assertEqual(repository.latest_snapshot(), snapshot)
             self.assertEqual(len(repository.bar_history("TA35")), 1)
-            with sqlite3.connect(path) as connection:
+            from contextlib import closing
+
+            with closing(sqlite3.connect(path)) as connection:
+
                 self.assertEqual(
                     connection.execute("select count(*) from lite_runs").fetchone()[0],
                     1,
@@ -41,6 +44,31 @@ class StorageTests(unittest.TestCase):
             repository.insert_metrics([MetricValue(value=0.15, **base)])
             repository.insert_metrics([MetricValue(value=0.16, **base)])
             self.assertEqual(repository.latest_metrics("rv_20")[0].value, 0.16)
+
+    def test_latest_metrics_falls_back_to_newest_completed_run(self):
+        with TemporaryDirectory() as directory:
+            repository = SQLiteRepository(Path(directory) / "lite.sqlite3")
+            older = DemoEodProvider(days=1, end=datetime(2026, 7, 1).date()).fetch_snapshot()
+            repository.insert_snapshot(older)
+            repository.insert_metrics(
+                [
+                    MetricValue(
+                        metric_name="rv_20",
+                        value=0.16,
+                        as_of=older.source_timestamp,
+                        model_version="x",
+                        run_id=older.run_id,
+                    )
+                ]
+            )
+            newer = DemoEodProvider(days=1, end=datetime(2026, 7, 2).date()).fetch_snapshot()
+            repository.insert_snapshot(newer)
+
+            metrics = repository.latest_metrics()
+
+            self.assertEqual(len(metrics), 1)
+            self.assertEqual(metrics[0].run_id, older.run_id)
+            self.assertEqual(metrics[0].value, 0.16)
 
 
 if __name__ == "__main__":

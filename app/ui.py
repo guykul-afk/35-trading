@@ -34,7 +34,7 @@ def page_header(title: str, data) -> None:
     st.title(title)
     status = "⚠️ נתונים ישנים" if data.meta.stale else "🟢 נתוני סוף יום"
     st.caption(
-        f"{status} · נכון ל־{data.meta.as_of:%d/%m/%Y} · מקור: {data.meta.source}"
+        f"{status} · נכון ל־{data.meta.as_of:%d/%m/%Y} · מקור: {data.meta.source} · [מאגר קוד (GitHub)]({SETTINGS.repository_url})"
     )
     if data.meta.market_data_type == "demo":
         st.warning("נתוני הדגמה סינתטיים — אינם מיועדים לקבלת החלטות מסחר.")

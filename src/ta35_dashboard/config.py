@@ -10,6 +10,7 @@ class Settings:
     timezone: str = "Asia/Jerusalem"
     stale_after_days: int = 3
     model_version: str = "1.5.0"
+    repository_url: str = "https://github.com/guykul-afk/35-trading"
 
 
 SETTINGS = Settings()

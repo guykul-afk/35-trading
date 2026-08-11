@@ -18,6 +18,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
+[project.urls]
+Repository = "https://github.com/guykul-afk/35-trading"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 from ta35_dashboard.connectors import DailyBar, MarketDataType, MarketSnapshot
 
@@ -27,12 +28,18 @@ class SQLiteRepository:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Generator[sqlite3.Connection, None, None]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
+
 
     def initialize(self) -> None:
         migration = (
@@ -190,11 +197,27 @@ class SQLiteRepository:
             )
 
     def latest_metrics(self, metric_name: str | None = None) -> list[MetricValue]:
-        snapshot = self.latest_snapshot()
-        if snapshot is None:
+        self.initialize()
+        # A source-specific refresh (for example Cboe after the TASE close) can
+        # create the newest run before its analytics are available.  Keep the
+        # dashboard usable by selecting the newest *completed* metric set.
+        # Metrics are deliberately kept on one run_id so cards never mix model
+        # states from different refreshes.
+        with self._connect() as connection:
+            run = connection.execute(
+                """SELECT lite_runs.run_id
+                   FROM lite_runs
+                   WHERE EXISTS (
+                       SELECT 1 FROM lite_metrics
+                       WHERE lite_metrics.run_id = lite_runs.run_id
+                   )
+                   ORDER BY source_timestamp DESC, received_timestamp DESC
+                   LIMIT 1"""
+            ).fetchone()
+        if run is None:
             return []
         query = "SELECT * FROM lite_metrics WHERE run_id = ?"
-        params: tuple[Any, ...] = (snapshot.run_id,)
+        params: tuple[Any, ...] = (run["run_id"],)
         if metric_name:
             query += " AND metric_name = ?"
             params += (metric_name,)

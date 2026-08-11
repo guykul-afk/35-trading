@@ -1,5 +1,7 @@
 # TA-35 Volatility Dashboard — Lite
 
+**Repository:** [https://github.com/guykul-afk/35-trading](https://github.com/guykul-afk/35-trading)
+
 Local, read-only, end-of-day volatility dashboard built only from free public
 data. The Lite line intentionally contains no option chain, DDE, IBKR, account,
 credential, order-entry or real-time code.

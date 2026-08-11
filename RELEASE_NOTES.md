@@ -105,3 +105,15 @@
 - Replaced pseudo-payoff ranges with a clearly labelled scenario-fit map.
 - Added non-overlapping OOS ablation with FDR for FX-equity state and rolling
   TA35-VTA35 correlation; both remain context-only until every gate passes.
+# Metrics refresh integrity fix — 2026-08-11
+
+- Recomputes and persists the complete Lite metric set after every data refresh,
+  including a Cboe-only refresh.
+- Builds refreshes in a staged SQLite database and activates them only after
+  analytics complete and are verified.
+- Falls back to the newest completed metric set if a legacy or interrupted run
+  has observations but no metrics.
+- Repairs the bundled database so the latest 2026-08-10 Cboe run contains 43
+  metrics and all 23 dashboard indicator cards are available.
+- Adds regression coverage for Cboe-only refreshes, failed analytics activation,
+  and fallback to the newest completed run.

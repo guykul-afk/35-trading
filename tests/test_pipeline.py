@@ -1,8 +1,15 @@
 import unittest
+from datetime import UTC, date, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from ta35_dashboard.connectors import DemoEodProvider
+from ta35_dashboard.connectors import (
+    DailyBar,
+    DemoEodProvider,
+    MarketDataType,
+    MarketSnapshot,
+)
 from ta35_dashboard.jobs import collect_history
 from ta35_dashboard.storage import SQLiteRepository
 
@@ -61,6 +68,57 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(
                 metrics["market_trend_state"].dimensions["available_inputs"], 5
             )
+
+    def test_cboe_only_refresh_recomputes_metrics_for_new_run(self):
+        with TemporaryDirectory() as directory:
+            repository = SQLiteRepository(Path(directory) / "lite.sqlite3")
+            collect_history(
+                DemoEodProvider(days=300, end=date(2026, 8, 9)), repository
+            )
+            bars = tuple(
+                DailyBar(
+                    symbol=symbol,
+                    session_date=date(2026, 8, 10),
+                    close=value,
+                    source="Cboe",
+                )
+                for symbol, value in (("VIX9D", 12.77), ("VIX", 15.46), ("VIX3M", 18.98))
+            )
+            snapshot = MarketSnapshot(
+                run_id="cboe-only-2026-08-10",
+                source="Cboe",
+                source_timestamp=datetime(2026, 8, 10, tzinfo=UTC),
+                received_timestamp=datetime(2026, 8, 11, tzinfo=UTC),
+                market_data_type=MarketDataType.EOD,
+                bars=bars,
+            )
+
+            class CboeOnlyProvider:
+                def fetch_history(self, *, start=None, end=None):
+                    return [snapshot]
+
+            collect_history(CboeOnlyProvider(), repository)
+            metrics = repository.latest_metrics()
+
+            self.assertGreater(len(metrics), 0)
+            self.assertEqual({metric.run_id for metric in metrics}, {snapshot.run_id})
+            self.assertIn("rv_20", {metric.metric_name for metric in metrics})
+
+    def test_failed_analytics_does_not_activate_partial_refresh(self):
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "lite.sqlite3"
+            repository = SQLiteRepository(database)
+            collect_history(DemoEodProvider(days=30), repository)
+            before = database.read_bytes()
+
+            with patch(
+                "ta35_dashboard.jobs.pipeline.compute_latest_metrics",
+                side_effect=RuntimeError("analytics failed"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "analytics failed"):
+                    collect_history(DemoEodProvider(days=31), repository)
+
+            self.assertEqual(database.read_bytes(), before)
 
 
 if __name__ == "__main__":

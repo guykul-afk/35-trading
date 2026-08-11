@@ -17,6 +17,8 @@ from ta35_dashboard.storage import SQLiteRepository
 
 @dataclass(frozen=True, slots=True)
 class TaseUploadResult:
+    """Outcome of a manual import; counts include newly stored days only."""
+
     observations: Mapping[str, int]
     latest_dates: Mapping[str, date]
 
@@ -45,16 +47,29 @@ def _validate_upload(symbol: str, raw: bytes, existing: list) -> tuple[Path, tup
     if symbol == "TA35" and any(None in (bar.open, bar.high, bar.low) for bar in bars):
         path.unlink(missing_ok=True)
         raise ValueError("קובץ ת״א־35 חייב לכלול עמודות פתיחה, גבוה, נמוך ונעילה.")
-    if existing and bars[-1].session_date < existing[-1].session_date:
-        path.unlink(missing_ok=True)
-        raise ValueError(
-            f"קובץ {symbol} מסתיים ב־{bars[-1].session_date:%d/%m/%Y}, "
-            f"לפני הנתון הקיים מ־{existing[-1].session_date:%d/%m/%Y}."
-        )
     if bars[-1].session_date > datetime.now(UTC).date():
         path.unlink(missing_ok=True)
         raise ValueError(f"קובץ {symbol} כולל תאריך עתידי ואינו תקין.")
     return path, bars
+
+
+def _delta_path(symbol: str, bars: tuple) -> Path:
+    """Create a temporary CSV containing only observations absent from the DB."""
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".csv", encoding="utf-8", newline="", delete=False
+    ) as handle:
+        path = Path(handle.name)
+        handle.write("Date,Open,High,Low,Close\n")
+        for bar in bars:
+            values = (bar.open, bar.high, bar.low, bar.close)
+            handle.write(
+                f"{bar.session_date.isoformat()},"
+                f"{'' if values[0] is None else values[0]},"
+                f"{'' if values[1] is None else values[1]},"
+                f"{'' if values[2] is None else values[2]},{values[3]}\n"
+            )
+    return path
 
 
 def import_tase_uploads(
@@ -75,11 +90,31 @@ def import_tase_uploads(
     downloads_dir = Path(downloads_dir)
     current = SQLiteRepository(database_path)
     validated: dict[str, tuple[Path, tuple]] = {}
+    deltas: dict[str, tuple[Path, tuple]] = {}
     staged_path: Path | None = None
     try:
         for symbol, raw in payloads.items():
             validated[symbol] = _validate_upload(
                 symbol, raw, current.bar_history(symbol, 10_000)
+            )
+
+        for symbol, (_, bars) in validated.items():
+            existing_dates = {
+                bar.session_date for bar in current.bar_history(symbol, 10_000)
+            }
+            new_bars = tuple(
+                bar for bar in bars if bar.session_date not in existing_dates
+            )
+            if new_bars:
+                deltas[symbol] = (_delta_path(symbol, new_bars), new_bars)
+
+        if not deltas:
+            return TaseUploadResult(
+                observations={symbol: 0 for symbol in validated},
+                latest_dates={
+                    symbol: bars[-1].session_date
+                    for symbol, (_, bars) in validated.items()
+                },
             )
 
         database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,12 +128,12 @@ def import_tase_uploads(
 
         specs = tuple(
             CsvSeriesSpec(symbol, path, "TASE", True, True)
-            for symbol, (path, _) in validated.items()
+            for symbol, (path, _) in deltas.items()
         )
         staged_repository = SQLiteRepository(staged_path)
         collect_history(PublicCsvEodProvider(specs), staged_repository)
 
-        for symbol, (_, bars) in validated.items():
+        for symbol, (_, bars) in deltas.items():
             imported = staged_repository.bar_history(symbol, 10_000)
             if not imported or imported[-1].session_date != bars[-1].session_date:
                 raise RuntimeError(f"אימות הייבוא של {symbol} נכשל.")
@@ -123,7 +158,10 @@ def import_tase_uploads(
             os.replace(staged_csv_name, target)
 
         return TaseUploadResult(
-            observations={symbol: len(bars) for symbol, (_, bars) in validated.items()},
+            observations={
+                symbol: len(deltas[symbol][1]) if symbol in deltas else 0
+                for symbol in validated
+            },
             latest_dates={
                 symbol: bars[-1].session_date for symbol, (_, bars) in validated.items()
             },
@@ -132,4 +170,6 @@ def import_tase_uploads(
         if staged_path is not None:
             staged_path.unlink(missing_ok=True)
         for path, _ in validated.values():
+            path.unlink(missing_ok=True)
+        for path, _ in deltas.values():
             path.unlink(missing_ok=True)
