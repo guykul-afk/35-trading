@@ -20,6 +20,23 @@ from ta35_dashboard.analytics.shortterm_strategies import (
 )
 
 data = bundle()
+
+# Extract rise probability and spot for DDE initialization
+prob_rows_init = [
+    row for row in data.family_probabilities if int(row.get("horizon", 0)) in {3, 7, 14}
+]
+latest_prob_init = 0.50
+if prob_rows_init:
+    latest_prob_init = float(prob_rows_init[0]["latest_probability"])
+
+last_close_val_init = float(data.ta35_closes[-1]) if data.ta35_closes else None
+
+dde_result = analyze_dde_options_data(
+    uploaded_files=st.session_state.get("dde_file_uploader"),
+    spot_override=last_close_val_init,
+    prob_rise=latest_prob_init,
+)
+
 page_header("דשבורד תנודתיות ת״א־35 — Lite", data)
 
 # יצירת חלוקת הטאבים המרכזית
@@ -227,10 +244,24 @@ with tab_hero:
             key="strategy_horizon",
         )
     )
+    # Override recommendation parameters with live DDE quotes if available
+    rec_spot = float(data.ta35_closes[-1]) if data.ta35_closes else None
+    rec_iv = data.implied_volatility
+    rec_status_label = "Context only"
+    is_live_dde = False
+
+    if dde_result.source_files:
+        rec_spot = dde_result.spot_price
+        horizon_exp = dde_result.expectations.get(horizon)
+        if horizon_exp and horizon_exp.implied_volatility:
+            rec_iv = horizon_exp.implied_volatility
+            rec_status_label = "🟢 DDE Live"
+            is_live_dde = True
+
     recommendation = recommend_strategy(
-        spot=float(data.ta35_closes[-1]) if data.ta35_closes else None,
+        spot=rec_spot,
         forecast_volatility=data.forecast_volatility,
-        implied_volatility=data.implied_volatility,
+        implied_volatility=rec_iv,
         trend_score=data.market_trend_score,
         volatility_score=data.volatility_direction_score,
         regime=data.regime,
@@ -252,13 +283,17 @@ with tab_hero:
     strat3.metric("תמחור תנודתיות", recommendation.pricing_view)
     strat4.metric(
         "סטטוס ולידציה",
-        "Context only",
+        rec_status_label,
         delta=(
             f"{strategy_history.observations} מקרים"
             if strategy_history and strategy_history.observations
             else "אין מדגם"
         ),
     )
+    
+    if is_live_dde:
+        st.success(f"📈 **המלצה זו מתומחרת בזמן אמת (DDE Live):** מבוסס על מדד לייב ({rec_spot:,.2f}) ותנודתיות גלומה מהשוק ({rec_iv:.2%}) לעומת תחזית תנודתיות ({data.forecast_volatility:.2%})")
+
     if recommendation.primary:
         st.info(f"**{recommendation.status}:** {recommendation.explanation}")
     else:
@@ -371,11 +406,7 @@ with tab_hero:
     current_time_str = time.strftime("%H:%M:%S")
     st.session_state["last_scan_time"] = current_time_str
 
-    dde_result = analyze_dde_options_data(
-        uploaded_files=uploaded_dde,
-        spot_override=last_close_val,
-        prob_rise=latest_prob if 'latest_prob' in locals() else 0.50,
-    )
+    # dde_result is already computed globally at the top of the script
 
     # Detect if file changed since last script run
     if "prev_mtime" not in st.session_state:

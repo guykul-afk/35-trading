@@ -191,12 +191,12 @@ def analyze_dde_options_data(
     # Re-sort final chains in case their days_to_expiration changed
     final_chains.sort(key=lambda c: c.days_to_expiration)
 
-    # 6. Term structure expectations (1d, 3d, 7d, 14d) using all final chains
+    # 6. Term structure expectations (1d, 3d, 7d, 14d, 30d) using all final chains
     expectations = calculate_term_structure_expectations(
         weekly_chain=weekly_chain,
         monthly_chain=monthly_chain,
         spot_price=spot_price,
-        target_horizons=(1, 3, 7, 14),
+        target_horizons=(1, 3, 7, 14, 30),
         chains=final_chains,
     )
 
