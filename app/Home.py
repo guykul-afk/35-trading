@@ -329,17 +329,18 @@ with tab_hero:
             st.markdown(f"- {warning}")
 
     with st.expander("🎯 מפת סטרייקים מומלצת ופרופיל Payoff בפקיעה (Strike Selection Engine)", expanded=True):
-        if recommendation.suggested_strikes:
+        suggested_strikes = getattr(recommendation, "suggested_strikes", {})
+        if suggested_strikes:
             risk_choice = st.radio(
                 "בחירת פרופיל סיכון עבור הסטרייקים המוצעים:",
                 options=["balanced", "conservative", "aggressive"],
-                format_func=lambda k: recommendation.suggested_strikes.get(k, {}).get("label", k),
+                format_func=lambda k: suggested_strikes.get(k, {}).get("label", k),
                 horizontal=True,
                 index=0,
                 key="risk_profile_selection",
             )
 
-            selected_profile = recommendation.suggested_strikes.get(risk_choice, {})
+            selected_profile = suggested_strikes.get(risk_choice, {})
             legs = selected_profile.get("legs", [])
             one_sigma_pts = selected_profile.get("one_sigma_pts", 0.0)
 
