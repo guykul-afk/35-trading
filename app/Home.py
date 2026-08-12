@@ -505,6 +505,40 @@ with tab_hero:
                 st.dataframe(pd.DataFrame(cal_rows), hide_index=True, width="stretch")
         else:
             st.info("לא נמצאו מרווחי זמן זמינים בין הפקיעות השונות בנתוני ה-DDE.")
+            
+        st.markdown("---")
+        st.subheader("⚖️ ארביטראז' תנודתיות (Volatility Arbitrage) מול ציפיות מודל")
+        st.caption("השוואה בין עלות אוכף/פרפר בפועל (Bid/Ask ביצועי) לבין תוחלת התנודתיות המשוקללת של המערכת, לאיתור תמחור חסר/יתר בשוק.")
+        
+        if dde_result.chains and data.forecast_volatility:
+            from ta35_dashboard.analytics.realtime_strategies import analyze_volatility_arbitrage
+            
+            all_vol_proposals = []
+            for c in dde_result.chains:
+                proposals = analyze_volatility_arbitrage(
+                    chain=c,
+                    spot_price=dde_result.spot_price,
+                    expected_vol=data.forecast_volatility,
+                )
+                all_vol_proposals.extend(proposals)
+                
+            if all_vol_proposals:
+                vol_rows = []
+                for vp in all_vol_proposals:
+                    vol_rows.append({
+                        "אסטרטגיה (סטרייקים)": vp.strategy_name,
+                        "ימים לפקיעה": f"{vp.expiration_days:.0f} ימים",
+                        "מחיר ביצוע (שוק)": f"{vp.market_price_pts:.2f} נק'",
+                        "מחיר הוגן (מודל)": f"{vp.theoretical_price_pts:.2f} נק'",
+                        "פער (Edge)": f"{vp.gap_pct:+.1%}",
+                        "המלצה": "🟢 Buy (זול)" if vp.recommendation == "Buy" else "🔴 Sell (יקר)"
+                    })
+                st.dataframe(pd.DataFrame(vol_rows), hide_index=True, width="stretch")
+            else:
+                st.info("לא אותרו פערי ארביטראז' משמעותיים (>5%) מול תנודתיות המודל.")
+        else:
+            st.info("חסרים נתוני שרשראות אופציות או תחזית תנודתיות לביצוע אנליזת Vol-Arb.")
+            
     else:
         st.info(dde_result.status_message)
 

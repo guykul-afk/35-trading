@@ -483,3 +483,174 @@ def price_calendar_time_spreads(
     # Sort calendar proposals by highest ROI: (estimated_max_profit_nis - net_debit_nis) / net_debit_nis
     proposals.sort(key=lambda p: (p.estimated_max_profit_nis - p.net_debit_nis) / max(1.0, p.net_debit_nis), reverse=True)
     return proposals
+
+
+@dataclass(frozen=True, slots=True)
+class VolatilityArbProposal:
+    strategy_name: str
+    expiration_days: float
+    market_price_pts: float
+    theoretical_price_pts: float
+    gap_pct: float
+    expected_vol: float
+    recommendation: str  # 'Sell', 'Buy', 'Pass'
+    legs: tuple[RealtimeLeg, ...]
+
+
+def analyze_volatility_arbitrage(
+    chain: ParsedOptionChain,
+    spot_price: float,
+    expected_vol: float,
+    contract_multiplier: float = 50.0,
+    fee_per_leg_nis: float = 2.5,
+) -> list[VolatilityArbProposal]:
+    """Analyze Volatility Arbitrage opportunities comparing market execution vs theoretical value.
+    
+    Checks ATM Straddle and ATM Butterfly (width = 1 std dev) using expected volatility.
+    """
+    if not chain.quotes or spot_price <= 0 or expected_vol <= 0:
+        return []
+
+    quote_map: dict[float, OptionQuote] = {q.strike: q for q in chain.quotes}
+    strikes = sorted(quote_map.keys())
+
+    if len(strikes) < 3:
+        return []
+
+    effective_spot = chain.synthetic_spot or spot_price
+    T = max(0.001, chain.days_to_expiration / 365.0)
+    std_move = effective_spot * expected_vol * math.sqrt(T)
+
+    def find_nearest_strike(target: float, available_strikes: list[float]) -> float:
+        return min(available_strikes, key=lambda s: abs(s - target))
+
+    atm_k = find_nearest_strike(effective_spot, strikes)
+    if atm_k not in quote_map:
+        return []
+    
+    atm_q = quote_map[atm_k]
+    proposals: list[VolatilityArbProposal] = []
+
+    # 1. ATM Straddle
+    c_buy = _get_clean_exec_price(atm_q, "call", "buy")
+    p_buy = _get_clean_exec_price(atm_q, "put", "buy")
+    c_sell = _get_clean_exec_price(atm_q, "call", "sell")
+    p_sell = _get_clean_exec_price(atm_q, "put", "sell")
+
+    theo_c = bs_call_price(S=effective_spot, K=atm_k, T=T, r=0.0, sigma=expected_vol)
+    theo_p = bs_put_price(S=effective_spot, K=atm_k, T=T, r=0.0, sigma=expected_vol)
+    theo_straddle = theo_c + theo_p
+
+    if c_buy is not None and p_buy is not None and c_sell is not None and p_sell is not None:
+        market_buy = c_buy + p_buy
+        market_sell = c_sell + p_sell
+        
+        # Add commission drag
+        comm_pts = (2 * fee_per_leg_nis) / contract_multiplier
+        
+        if theo_straddle > market_buy + comm_pts:
+            gap = (theo_straddle - market_buy - comm_pts) / market_buy
+            if gap > 0.05:  # 5% edge threshold
+                proposals.append(
+                    VolatilityArbProposal(
+                        strategy_name=f"Long Straddle ATM ({atm_k})",
+                        expiration_days=chain.days_to_expiration,
+                        market_price_pts=market_buy,
+                        theoretical_price_pts=theo_straddle,
+                        gap_pct=gap,
+                        expected_vol=expected_vol,
+                        recommendation="Buy",
+                        legs=(
+                            RealtimeLeg("Buy", "Call", atm_k, atm_q.call_bid, atm_q.call_ask, atm_q.call_mid, c_buy, "Long Call ATM"),
+                            RealtimeLeg("Buy", "Put", atm_k, atm_q.put_bid, atm_q.put_ask, atm_q.put_mid, p_buy, "Long Put ATM"),
+                        ),
+                    )
+                )
+        elif market_sell > theo_straddle + comm_pts:
+            gap = (market_sell - theo_straddle - comm_pts) / theo_straddle
+            if gap > 0.05:
+                proposals.append(
+                    VolatilityArbProposal(
+                        strategy_name=f"Short Straddle ATM ({atm_k})",
+                        expiration_days=chain.days_to_expiration,
+                        market_price_pts=market_sell,
+                        theoretical_price_pts=theo_straddle,
+                        gap_pct=gap,
+                        expected_vol=expected_vol,
+                        recommendation="Sell",
+                        legs=(
+                            RealtimeLeg("Sell", "Call", atm_k, atm_q.call_bid, atm_q.call_ask, atm_q.call_mid, c_sell, "Short Call ATM"),
+                            RealtimeLeg("Sell", "Put", atm_k, atm_q.put_bid, atm_q.put_ask, atm_q.put_mid, p_sell, "Short Put ATM"),
+                        ),
+                    )
+                )
+
+    # 2. ATM Butterfly (Width = 1 Std Dev)
+    wing_up = find_nearest_strike(atm_k + std_move, strikes)
+    wing_dn = find_nearest_strike(atm_k - std_move, strikes)
+    
+    if wing_up != atm_k and wing_dn != atm_k and wing_up in quote_map and wing_dn in quote_map:
+        wu_q, wd_q = quote_map[wing_up], quote_map[wing_dn]
+        
+        # Long Butterfly (Buy Wings, Sell 2x ATM)
+        c_wu_buy = _get_clean_exec_price(wu_q, "call", "buy")
+        c_wd_buy = _get_clean_exec_price(wd_q, "call", "buy")
+        
+        # Theoretical values
+        theo_wu = bs_call_price(S=effective_spot, K=wing_up, T=T, r=0.0, sigma=expected_vol)
+        theo_wd = bs_call_price(S=effective_spot, K=wing_dn, T=T, r=0.0, sigma=expected_vol)
+        theo_fly = theo_wd - 2 * theo_c + theo_wu
+        
+        if c_wu_buy is not None and c_wd_buy is not None and c_sell is not None:
+            market_fly_buy = c_wd_buy - 2 * c_sell + c_wu_buy
+            comm_pts = (4 * fee_per_leg_nis) / contract_multiplier
+            
+            if theo_fly > market_fly_buy + comm_pts:
+                gap = (theo_fly - market_fly_buy - comm_pts) / abs(market_fly_buy) if market_fly_buy != 0 else 0
+                if gap > 0.05:
+                    proposals.append(
+                        VolatilityArbProposal(
+                            strategy_name=f"Long Call Butterfly ({wing_dn}/{atm_k}/{wing_up})",
+                            expiration_days=chain.days_to_expiration,
+                            market_price_pts=market_fly_buy,
+                            theoretical_price_pts=theo_fly,
+                            gap_pct=gap,
+                            expected_vol=expected_vol,
+                            recommendation="Buy",
+                            legs=(
+                                RealtimeLeg("Buy", "Call", wing_dn, wd_q.call_bid, wd_q.call_ask, wd_q.call_mid, c_wd_buy, "Long Lower Wing"),
+                                RealtimeLeg("Sell", "Call", atm_k, atm_q.call_bid, atm_q.call_ask, atm_q.call_mid, c_sell, "Short ATM x2"),
+                                RealtimeLeg("Buy", "Call", wing_up, wu_q.call_bid, wu_q.call_ask, wu_q.call_mid, c_wu_buy, "Long Upper Wing"),
+                            )
+                        )
+                    )
+
+        # Short Butterfly (Sell Wings, Buy 2x ATM)
+        c_wu_sell = _get_clean_exec_price(wu_q, "call", "sell")
+        c_wd_sell = _get_clean_exec_price(wd_q, "call", "sell")
+        
+        if c_wu_sell is not None and c_wd_sell is not None and c_buy is not None:
+            market_fly_sell = c_wd_sell - 2 * c_buy + c_wu_sell
+            if market_fly_sell > theo_fly + comm_pts:
+                gap = (market_fly_sell - theo_fly - comm_pts) / theo_fly if theo_fly != 0 else 0
+                if gap > 0.05:
+                    proposals.append(
+                        VolatilityArbProposal(
+                            strategy_name=f"Short Call Butterfly ({wing_dn}/{atm_k}/{wing_up})",
+                            expiration_days=chain.days_to_expiration,
+                            market_price_pts=market_fly_sell,
+                            theoretical_price_pts=theo_fly,
+                            gap_pct=gap,
+                            expected_vol=expected_vol,
+                            recommendation="Sell",
+                            legs=(
+                                RealtimeLeg("Sell", "Call", wing_dn, wd_q.call_bid, wd_q.call_ask, wd_q.call_mid, c_wd_sell, "Short Lower Wing"),
+                                RealtimeLeg("Buy", "Call", atm_k, atm_q.call_bid, atm_q.call_ask, atm_q.call_mid, c_buy, "Long ATM x2"),
+                                RealtimeLeg("Sell", "Call", wing_up, wu_q.call_bid, wu_q.call_ask, wu_q.call_mid, c_wu_sell, "Short Upper Wing"),
+                            )
+                        )
+                    )
+
+    proposals.sort(key=lambda p: p.gap_pct, reverse=True)
+    return proposals
+
