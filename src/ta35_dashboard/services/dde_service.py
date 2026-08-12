@@ -1,4 +1,30 @@
+"""DDE Options Chain Service.
+
+Scans project directories for live updating DDE option chain files, computes term structure
+implied volatility across 1/3/7/14 days, and generates real-time option strategy and calendar spread proposals.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
 import logging
+from pathlib import Path
+import tempfile
+from typing import Any, Sequence
+
+from ta35_dashboard.analytics.implied_vol import (
+    HorizonExpectation,
+    calculate_term_structure_expectations,
+)
+from ta35_dashboard.analytics.realtime_strategies import (
+    CalendarSpreadProposal,
+    RealtimeStrategyProposal,
+    price_calendar_time_spreads,
+    price_realtime_strategies,
+)
+from ta35_dashboard.config import PROJECT_ROOT
+from ta35_dashboard.connectors.dde_parser import ParsedOptionChain, parse_tase_dde_file
 from ta35_dashboard.storage.repository import SQLiteRepository
 
 logger = logging.getLogger(__name__)
