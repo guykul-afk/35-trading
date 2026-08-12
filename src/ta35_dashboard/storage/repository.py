@@ -42,11 +42,12 @@ class SQLiteRepository:
 
 
     def initialize(self) -> None:
-        migration = (
-            Path(__file__).resolve().parents[3] / "migrations" / "001_initial.sql"
-        )
+        migrations_dir = Path(__file__).resolve().parents[3] / "migrations"
+        migration_files = sorted(migrations_dir.glob("*.sql"))
         with self._connect() as connection:
-            connection.executescript(migration.read_text(encoding="utf-8"))
+            for sql_file in migration_files:
+                connection.executescript(sql_file.read_text(encoding="utf-8"))
+
 
     def insert_snapshot(self, snapshot: MarketSnapshot) -> str:
         self.initialize()
