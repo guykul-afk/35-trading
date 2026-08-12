@@ -7,12 +7,25 @@ every 10 seconds.
 
 from __future__ import annotations
 
+import sys
 import os
 from pathlib import Path
+import re
 import time
 import win32com.client
+import csv
+
+# Force stdout and stderr to UTF-8 with backslashreplace error handling to prevent any print encoding crashes
+sys.stdout.reconfigure(encoding='utf-8', errors='backslashreplace')
+sys.stderr.reconfigure(encoding='utf-8', errors='backslashreplace')
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def sanitize_filename(filename: str) -> str:
+    """Remove invalid chars and file extensions to create a clean CSV name."""
+    name = Path(filename).stem
+    return name.strip()
 
 
 def export_active_workbooks():
@@ -26,6 +39,7 @@ def export_active_workbooks():
     try:
         workbooks_count = xl.Workbooks.Count
         if workbooks_count == 0:
+            print("[מידע] אין חוברות עבודה פתוחות באקסל.")
             return
 
         for i in range(1, workbooks_count + 1):
@@ -34,42 +48,45 @@ def export_active_workbooks():
 
             # Identify options chain workbooks
             is_options = any(
-                k in name_lower for k in ["נגזרים", "option", "dde", "שבועית", "אוגוסט", "תא 35", "תא-35"]
+                k in name_lower for k in ["נגזרים", "option", "dde", "שבועית", "אוגוסט", "תא 35", "תא-35", "יומית"]
             )
             if not is_options:
                 continue
 
             try:
                 ws = wb.ActiveSheet
-                # Determine expiration type
-                if "שבועית" in name_lower or "weekly" in name_lower:
-                    dest_name = "נגזרים נגזרים - תא 35 - שבועית 140826_12082026_114111.csv"
-                else:
-                    dest_name = "נגזרים נגזרים - תא 35 - אוגוסט 26_12082026_114146.csv"
-
+                clean_name = sanitize_filename(wb.Name)
+                
+                # We append '_live' to avoid Windows permission/file-lock errors 
+                # since Excel holds exclusive locks on the open files
+                dest_name = f"{clean_name}_live.csv"
                 dest_path = PROJECT_ROOT / dest_name
 
-                # Export active sheet to CSV
-                # FileFormat = 6 corresponds to xlCSV (standard comma-separated CSV)
-                # We save a copy to avoid Excel blocking the main workbook
                 print(f"[עדכון] מייצא את {wb.Name} -> {dest_name}...")
                 
-                # Copy sheet to a temp workbook and save as CSV
-                ws.Copy()
-                temp_wb = xl.ActiveWorkbook
-                # Disable alerts
-                xl.Application.DisplayAlerts = False
-                temp_wb.SaveAs(Filename=str(dest_path), FileFormat=6)  # 6 = xlCSV
-                temp_wb.Close(SaveChanges=False)
-                xl.Application.DisplayAlerts = True
-                print(f"  ✓ קובץ יוצא בהצלחה ל-{dest_name}")
+                # Read all values directly from Excel COM memory
+                data = ws.UsedRange.Value
+                if data:
+                    # If it's a single cell value, wrap it
+                    if not isinstance(data, (list, tuple)):
+                        data = [[data]]
+                    
+                    with open(dest_path, "w", newline="", encoding="utf-8-sig") as f:
+                        writer = csv.writer(f)
+                        for row in data:
+                            if isinstance(row, (list, tuple)):
+                                clean_row = [str(cell) if cell is not None else "" for cell in row]
+                            else:
+                                clean_row = [str(row) if row is not None else ""]
+                            writer.writerow(clean_row)
+                    print(f"  [OK] קובץ יוצא בהצלחה ל-{dest_name}")
+                else:
+                    print(f"  [אזהרה] גיליון ריק ב-{wb.Name}")
             except Exception as e:
+                import traceback
+                tb = traceback.format_exc()
                 print(f"[שגיאה] כשל בייצוא {wb.Name}: {e}")
-                # Reset alerts just in case
-                try:
-                    xl.Application.DisplayAlerts = True
-                except:
-                    pass
+                print(tb)
     except Exception as e:
         print(f"[שגיאה] כשל בסריקת אקסל: {e}")
 

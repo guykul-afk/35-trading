@@ -10,3 +10,4 @@ downloads/*.csv
 *.csv
 scratch/
 .DS_Store
+dde_sync.log

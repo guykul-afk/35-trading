@@ -89,7 +89,11 @@ def parse_tase_dde_file(
 
     fname = path.name.lower()
     if expiration_label == "auto":
-        if "שבועית" in fname or "weekly" in fname:
+        if "יומית" in fname or "daily" in fname:
+            expiration_label = "יומית (Daily)"
+            if days_to_expiration is None:
+                days_to_expiration = 1.0
+        elif "שבועית" in fname or "weekly" in fname:
             expiration_label = "שבועית (Weekly)"
             if days_to_expiration is None:
                 days_to_expiration = 2.0
@@ -149,10 +153,13 @@ def parse_tase_dde_file(
             continue
 
         strike_raw = line[17].strip()
-        if not strike_raw.isdigit() or int(strike_raw) < 100:
+        try:
+            # Handle float values like '4120.0' from Excel COM
+            strike = float(strike_raw)
+            if strike < 100:
+                continue
+        except ValueError:
             continue
-
-        strike = float(strike_raw)
 
         def _val(idx: int) -> float | None:
             if idx < len(line):
@@ -165,19 +172,21 @@ def parse_tase_dde_file(
                         return None
             return None
 
-        call_bid = _val(11)
-        call_ask = _val(13)
-        call_last = _val(12)
-        call_bid_sz = _val(10)
-        call_ask_sz = _val(14)
-        call_iv = _val(16)
+        # Left side of Strike (Col 10-16) is PUT
+        put_bid = _val(11)
+        put_ask = _val(13)
+        put_last = _val(12)
+        put_bid_sz = _val(10)
+        put_ask_sz = _val(14)
+        put_iv = _val(16)
 
-        put_bid = _val(23)
-        put_ask = _val(21)
-        put_last = _val(22)
-        put_ask_sz = _val(20)
-        put_bid_sz = _val(24)
-        put_iv = _val(18)
+        # Right side of Strike (Col 18-24) is CALL
+        call_bid = _val(23)
+        call_ask = _val(21)
+        call_last = _val(22)
+        call_ask_sz = _val(20)
+        call_bid_sz = _val(24)
+        call_iv = _val(18)
 
         call_mid = (call_bid + call_ask) / 2.0 if (call_bid and call_ask) else call_last
         put_mid = (put_bid + put_ask) / 2.0 if (put_bid and put_ask) else put_last

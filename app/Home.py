@@ -426,10 +426,10 @@ with tab_hero:
             st.metric("מחיר מדד/נכס בסיס בשימוש", f"{dde_result.spot_price:,.1f}")
             if dde_result.synthetic_spot:
                 st.metric("חוזה סינטטי גלום (Synthetics)", f"{dde_result.synthetic_spot:,.1f}")
-            if dde_result.monthly_chain:
-                st.caption(f"פקיעה מרכזית: **{dde_result.monthly_chain.expiration_label}** ({dde_result.monthly_chain.days_to_expiration:.0f} ימים לפקיעה)")
-            if dde_result.weekly_chain:
-                st.caption(f"פקיעה שבועית: **{dde_result.weekly_chain.expiration_label}** ({dde_result.weekly_chain.days_to_expiration:.0f} ימים לפקיעה)")
+            
+            st.markdown("##### 📅 פקיעות פעילות שזוהו:")
+            for chain in dde_result.chains:
+                st.caption(f"· **{chain.expiration_label}** — {chain.days_to_expiration:.1f} ימים לפקיעה ({len(chain.quotes)} סטרייקים)")
 
         st.markdown("##### 💡 הצעות אסטרטגיה בזמן אמת (תמחור ציטוטי שוק חים - Bid/Ask)")
         if dde_result.realtime_proposals:

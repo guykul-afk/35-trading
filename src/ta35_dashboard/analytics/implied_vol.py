@@ -110,34 +110,60 @@ def calculate_term_structure_expectations(
     spot_price: float,
     target_horizons: tuple[int, ...] = (1, 3, 7, 14),
     fallback_iv: float = 0.12,
+    chains: list[ParsedOptionChain] | None = None,
 ) -> dict[int, HorizonExpectation]:
-    """Calculate term structure implied volatilities and price ranges across target horizons."""
-    iv_w = extract_atm_implied_volatility(weekly_chain, spot_price) if weekly_chain else None
-    iv_m = extract_atm_implied_volatility(monthly_chain, spot_price) if monthly_chain else None
+    """Calculate term structure implied volatilities and price ranges across target horizons dynamically."""
+    # 1. Build a list of active chains with their extracted ATM IVs
+    active_chains = []
+    if chains:
+        active_chains = list(chains)
+    else:
+        if weekly_chain:
+            active_chains.append(weekly_chain)
+        if monthly_chain:
+            active_chains.append(monthly_chain)
 
-    T_w = max(0.001, (weekly_chain.days_to_expiration if weekly_chain else 2.0) / 365.0)
-    T_m = max(0.001, (monthly_chain.days_to_expiration if monthly_chain else 16.0) / 365.0)
+    # Resolve ATM IV and expiration T for each chain
+    points = []
+    for c in active_chains:
+        iv = extract_atm_implied_volatility(c, spot_price)
+        if iv is not None:
+            T = max(0.001, c.days_to_expiration / 365.0)
+            points.append((T, iv, c.days_to_expiration))
 
-    if iv_w is None and iv_m is None:
-        iv_w, iv_m = fallback_iv, fallback_iv
-    elif iv_w is None:
-        iv_w = iv_m
-    elif iv_m is None:
-        iv_m = iv_w
+    # Sort points by time to expiration
+    points.sort(key=lambda p: p[0])
 
-    var_w = (iv_w**2) * T_w
-    var_m = (iv_m**2) * T_m
+    # Fallback if no points parsed
+    if not points:
+        points = [(2.0 / 365.0, fallback_iv, 2.0), (16.0 / 365.0, fallback_iv, 16.0)]
 
     results: dict[int, HorizonExpectation] = {}
 
     for h in target_horizons:
         T_h = h / 365.0
-        if T_h <= T_w:
-            iv_h = iv_w
-        elif T_h >= T_m:
-            iv_h = iv_m
+
+        # Boundary conditions
+        if T_h <= points[0][0]:
+            iv_h = points[0][1]
+        elif T_h >= points[-1][0]:
+            iv_h = points[-1][1]
         else:
-            var_h = var_w + (var_m - var_w) * (T_h - T_w) / (T_m - T_w)
+            # Find the bracketing points
+            t_idx = 0
+            for i in range(len(points) - 1):
+                if points[i][0] <= T_h < points[i+1][0]:
+                    t_idx = i
+                    break
+            
+            t1, iv1, _ = points[t_idx]
+            t2, iv2, _ = points[t_idx + 1]
+            
+            var1 = (iv1**2) * t1
+            var2 = (iv2**2) * t2
+            
+            # Interpolate variance linearly in time
+            var_h = var1 + (var2 - var1) * (T_h - t1) / (t2 - t1)
             iv_h = math.sqrt(max(0.0001, var_h / T_h))
 
         one_sigma = spot_price * iv_h * math.sqrt(h / 252.0)
