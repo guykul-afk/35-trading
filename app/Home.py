@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -8,16 +9,24 @@ import streamlit as st
 from ui import bundle, page_header
 
 from ta35_dashboard.analytics import probability_band, recommend_strategy
+from ta35_dashboard.analytics.payoff import build_plotly_payoff_chart, generate_strategy_payoff_data
 from ta35_dashboard.config import PROJECT_ROOT, SETTINGS
 from ta35_dashboard.services import import_tase_uploads
+from ta35_dashboard.services.dde_service import analyze_dde_options_data
+
+from ta35_dashboard.analytics.shortterm_strategies import (
+    build_shortterm_payoff_fan_chart,
+    get_shortterm_recommendation,
+)
 
 data = bundle()
 page_header("דשבורד תנודתיות ת״א־35 — Lite", data)
 
 # יצירת חלוקת הטאבים המרכזית
-tab_hero, tab_indicators, tab_research, tab_data = st.tabs(
+tab_hero, tab_shortterm, tab_indicators, tab_research, tab_data = st.tabs(
     [
-        "🎯 תחזית, מניפה ואסטרטגיה",
+        "🎯 תחזית ומניפה",
+        "⚡ טריידים קצרי טווח (1-3 ימים)",
         "📊 אינדיקטורים מורחבים",
         "🔬 מחקר ו-Backtest",
         "⚙️ עדכון נתונים",
@@ -47,30 +56,36 @@ with tab_hero:
         help="חציון אומדני התנודתיות הממומשת המשולבים לחישוב מניפת ההסתברות",
     )
 
-    colors = {"רגוע": "green", "רגיל": "blue", "זהירות": "orange", "לחץ גבוה": "red"}
-    regime_color = colors.get(data.regime, "gray")
+    vol_state = data.regime_matrix.volatility_state
+    vol_delta = f"{data.regime_matrix.market_state} × {data.regime_matrix.volatility_state}"
     kpi3.metric(
-        "משטר שוק",
-        data.regime,
-        delta=f"{data.regime_matrix.market_state} × {data.regime_matrix.volatility_state}",
+        "צפי תנודתיות משוקלל",
+        vol_state,
+        delta=f"משטר {data.regime} · {vol_delta}",
         delta_color="normal",
-        help="מטריצת משטר שוק ומגמה נוכחית",
+        help="שקלול אינדיקטורי התנודתיות והמשטר (VTA35, Cboe VIX, VRP, אחוזון תנודתיות)",
     )
 
     prob_rows = [
         row for row in data.family_probabilities if int(row.get("horizon", 0)) in {3, 7, 14}
     ]
+    market_state = data.regime_matrix.market_state
     if prob_rows:
         latest_prob = float(prob_rows[0]["latest_probability"])
-        prob_axis = "RV יעלה" if prob_rows[0]["axis"] == "volatility" else "ת״א־35 יעלה"
-        kpi4.metric(
-            f"P({prob_axis}) · {int(prob_rows[0]['horizon'])}d",
-            f"{latest_prob:.1%}",
-            delta=f"Brier {float(prob_rows[0]['brier']):.3f}",
-            help="תחזית מודל הסתברותי Ridge לאחור",
-        )
+        prob_axis = "ת״א־35 יעלה"
+        market_delta = f"P({prob_axis}) {latest_prob:.1%} · Brier {float(prob_rows[0]['brier']):.3f}"
+    elif data.market_trend_score is not None:
+        market_delta = f"ניקוד מגמה {data.market_trend_score:+.2f}"
     else:
-        kpi4.metric("P(תחזית הסתברותית)", "Context Only")
+        market_delta = "Context Only"
+
+    kpi4.metric(
+        "צפי מדד משוקלל",
+        market_state,
+        delta=market_delta,
+        delta_color="normal",
+        help="שקלול אינדיקטורי המגמה והתחזית ההסתברותית למדד ת״א־35",
+    )
 
     st.markdown("---")
 
@@ -278,9 +293,197 @@ with tab_hero:
         for warning in recommendation.warnings:
             st.markdown(f"- {warning}")
 
+    with st.expander("🎯 מפת סטרייקים מומלצת ופרופיל Payoff בפקיעה (Strike Selection Engine)", expanded=True):
+        if recommendation.suggested_strikes:
+            risk_choice = st.radio(
+                "בחירת פרופיל סיכון עבור הסטרייקים המוצעים:",
+                options=["balanced", "conservative", "aggressive"],
+                format_func=lambda k: recommendation.suggested_strikes.get(k, {}).get("label", k),
+                horizontal=True,
+                index=0,
+                key="risk_profile_selection",
+            )
+
+            selected_profile = recommendation.suggested_strikes.get(risk_choice, {})
+            legs = selected_profile.get("legs", [])
+            one_sigma_pts = selected_profile.get("one_sigma_pts", 0.0)
+
+            st.caption(
+                f"תנודה צפויה של סדרת תקן אחת (1σ): **{one_sigma_pts} נקודות** "
+                f"(מעוגל למדרגות 10 נק' בתל אביב 35, מותאם Skew ומשטר לחץ)"
+            )
+
+            if legs:
+                leg_rows = []
+                spot_val = last_close_val or (float(data.ta35_closes[-1]) if data.ta35_closes else None)
+                for leg in legs:
+                    strike_val = leg.get("strike", 0)
+                    dist_pct = (strike_val - spot_val) / spot_val if spot_val and strike_val else 0.0
+                    leg_rows.append(
+                        {
+                            "תיאור רגל": leg.get("label", ""),
+                            "פעולה": "קנייה (Buy)" if leg.get("action") == "Buy" else "מכירה (Sell)",
+                            "סוג אופציה": leg.get("option_type"),
+                            "סטרייק": strike_val,
+                            "כמות": f"{leg.get('quantity', 1)}x",
+                            "מרחק מהמדד": f"{dist_pct:+.1%}" if spot_val else "—",
+                        }
+                    )
+                st.dataframe(pd.DataFrame(leg_rows), hide_index=True, width="stretch")
+
+                vol_val = data.forecast_volatility or 0.15
+                if spot_val and vol_val:
+                    payoff_data = generate_strategy_payoff_data(
+                        spot=spot_val,
+                        forecast_volatility=vol_val,
+                        horizon_days=horizon,
+                        legs=legs,
+                    )
+                    strategy_title = (
+                        f"פרופיל Payoff בפקיעה — "
+                        f"{recommendation.primary.name if recommendation.primary else 'אסטרטגיה כללית'} "
+                        f"({selected_profile.get('label', '')})"
+                    )
+                    fig = build_plotly_payoff_chart(payoff_data, title=strategy_title)
+                    st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("אין נתונים מספיקים לגזירת מפת סטרייקים מוצעת.")
+
     st.markdown("---")
 
-    # 4. גרפי היסטוריית TA-35 ו-VTA35
+    # 4. נתוני אופציות DDE בזמן אמת, צפי 1/3/7/14 ימים והמלצות אסטרטגיה
+    st.subheader("⚡ נתוני אופציות DDE בזמן אמת — צפי 1 / 3 / 7 / 14 ימים והמלצות בלייב")
+
+    col_up, col_ref = st.columns([1.5, 1.0])
+    with col_up:
+        uploaded_dde = st.file_uploader(
+            "העלאת קבצי DDE/אופציות מעודכנים (UTF-16LE / TSV)",
+            type=["txt", "csv", "tsv"],
+            accept_multiple_files=True,
+            help="ניתן להעלות קבצים מעודכנים או לשמור קבצי DDE בתיקיית הפרויקט. המערכת מזהה אותם אוטומטית.",
+            key="dde_file_uploader",
+        )
+    with col_ref:
+        st.markdown("<br>", unsafe_allow_html=True)
+        auto_refresh = st.checkbox("🔄 רענון אוטומטי בלייב (כל 30 שניות)", value=False, key="dde_auto_refresh")
+
+    # Track active scan time
+    current_time_str = time.strftime("%H:%M:%S")
+    st.session_state["last_scan_time"] = current_time_str
+
+    dde_result = analyze_dde_options_data(
+        uploaded_files=uploaded_dde,
+        spot_override=last_close_val,
+        prob_rise=latest_prob if 'latest_prob' in locals() else 0.50,
+    )
+
+    # Detect if file changed since last script run
+    if "prev_mtime" not in st.session_state:
+        st.session_state["prev_mtime"] = dde_result.last_modified_str
+        st.session_state["update_count"] = 0
+    elif st.session_state["prev_mtime"] != dde_result.last_modified_str:
+        st.session_state["prev_mtime"] = dde_result.last_modified_str
+        st.session_state["update_count"] += 1
+        st.toast(f"🔔 קובץ DDE עודכן! (עדכון מס' {st.session_state['update_count']})")
+
+    if dde_result.source_files:
+        # Check if file has changed in the last 1 minute
+        import datetime as dt_module
+        is_recent = False
+        try:
+            mtime_part = dde_result.last_modified_str.split()[0]
+            m_h, m_m, m_s = map(int, mtime_part.split(':'))
+            now_dt = dt_module.datetime.now()
+            file_dt = now_dt.replace(hour=m_h, minute=m_m, second=m_s)
+            time_diff = (now_dt - file_dt).total_seconds()
+            if time_diff < 0:
+                time_diff += 86400
+            is_recent = time_diff < 30
+        except Exception:
+            pass
+
+        if is_recent:
+            st.success(f"🟢 **הסורק פעיל:** הנתונים השתנו ועודכנו בהצלחה! · **עדכון אחרון בקובץ:** {dde_result.last_modified_str} · **סריקה אחרונה:** {current_time_str}")
+        else:
+            st.warning(f"🟡 **הסורק פעיל ומחפש שינויים...** · **סריקה אחרונה:** {current_time_str} · קובץ ה-DDE בדיסק לא השתנה מאז **{dde_result.last_modified_str}** · ⚪ לא זוהה שינוי בנתונים בסריקה האחרונה (הנתונים זהים לציטוט הקודם).")
+
+        col_dde1, col_dde2 = st.columns([1.2, 0.8])
+        with col_dde1:
+            st.markdown("##### 📈 צפי תנודתיות משתמעת וטווחים (IV Term Structure)")
+            exp_table = []
+            for h, exp in dde_result.expectations.items():
+                exp_table.append({
+                    "אופק צפי": f"{h} ימי מסחר",
+                    "תנודתיות משתמעת (IV)": f"{exp.implied_volatility:.2%}",
+                    "תנודה צפויה (±1σ)": f"±{exp.one_sigma_move:.1f} נק'",
+                    "טווח מדד צפוי (68%)": f"{exp.lower_1s:,.0f} – {exp.upper_1s:,.0f}",
+                    "טווח מדד רחב (95%)": f"{exp.lower_2s:,.0f} – {exp.upper_2s:,.0f}",
+                })
+            st.dataframe(pd.DataFrame(exp_table), hide_index=True, width="stretch")
+
+        with col_dde2:
+            st.markdown("##### 🎯 נתוני אופציות גלומים")
+            st.metric("מחיר מדד/נכס בסיס בשימוש", f"{dde_result.spot_price:,.1f}")
+            if dde_result.synthetic_spot:
+                st.metric("חוזה סינטטי גלום (Synthetics)", f"{dde_result.synthetic_spot:,.1f}")
+            if dde_result.monthly_chain:
+                st.caption(f"פקיעה מרכזית: **{dde_result.monthly_chain.expiration_label}** ({dde_result.monthly_chain.days_to_expiration:.0f} ימים לפקיעה)")
+            if dde_result.weekly_chain:
+                st.caption(f"פקיעה שבועית: **{dde_result.weekly_chain.expiration_label}** ({dde_result.weekly_chain.days_to_expiration:.0f} ימים לפקיעה)")
+
+        st.markdown("##### 💡 הצעות אסטרטגיה בזמן אמת (תמחור ציטוטי שוק חים - Bid/Ask)")
+        if dde_result.realtime_proposals:
+            for prop in dde_result.realtime_proposals:
+                with st.expander(f"📌 {prop.strategy_name} — תוחלת רווח: {prop.expected_value_nis:+.0f} ש״ח", expanded=True):
+                    pcol1, pcol2, pcol3, pcol4 = st.columns(4)
+                    pcol1.metric("זיכוי/חיוב נטו", f"{prop.net_credit_debit_nis:+.0f} ש״ח", help="חיובי = זיכוי נטו (Net Credit), שלילי = חיוב נטו (Net Debit)")
+                    pcol2.metric("רווח מרבי", f"{prop.max_profit_nis:,.0f} ש״ח" if prop.max_profit_nis != float('inf') else "בלתי מוגבל")
+                    pcol3.metric("הפסד מרבי", f"{prop.max_loss_nis:,.0f} ש״ח")
+                    pcol4.metric("סיכוי הצלחה (PoP)", f"{prop.probability_of_profit:.1%}")
+
+                    st.write(f"**הסבר:** {prop.rationale}")
+                    st.caption(f"נקודות איזון (Breakeven): {', '.join([f'{be:,.1f}' for be in prop.breakeven_points])} נקודות | סטטוס: {prop.quality_label}")
+
+                    st.markdown("**פירוט רגלי העסקה בזמן אמת:**")
+                    leg_data = []
+                    for leg in prop.legs:
+                        leg_data.append({
+                            "פעולה": "קנייה (Buy)" if leg.action == "Buy" else "מכירה (Sell)",
+                            "סוג": leg.option_type,
+                            "מחיר מימוש": leg.strike,
+                            "מחיר ביצוע (ש״ח)": f"{leg.exec_price * 100:,.0f} ש״ח",
+                            "מחיר בנקודות": f"{leg.exec_price:.2f} נק'",
+                            "תיאור רגל": leg.label,
+                        })
+                    st.dataframe(pd.DataFrame(leg_data), hide_index=True, width="stretch")
+        if dde_result.calendar_proposals:
+            with st.expander("⏳ אסטרטגיות מרווחי זמן בין פקיעות (Calendar Spreads & Time Skew Arbitrage)", expanded=True):
+                st.caption("בדיקת תמחור מרווחי זמן בזמן אמת: מכירת אופציה שבועית לפקיעה קרובה כנגד קניית אופציה חודשית בסטרייק זהה לניצול שחיקת זמן מואצת (Theta Decay) והפרשי תנודתיות גלומה (IV Skew).")
+                cal_rows = []
+                for cal in dde_result.calendar_proposals[:8]:
+                    cal_rows.append({
+                        "אסטרטגיה": cal.strategy_name,
+                        "סטרייק": f"{cal.strike:,.0f}",
+                        "סוג אופציה": cal.option_type,
+                        "עלות נטו (ש״ח)": f"{cal.net_debit_nis:,.0f} ש״ח",
+                        "עלות בנקודות": f"{cal.net_debit_pts:.2f} נק'",
+                        "רווח מרבי משוער (ש״ח)": f"{cal.estimated_max_profit_nis:,.0f} ש״ח",
+                        "יתרון שחיקת זמן (Theta)": f"{cal.time_decay_ratio:.1f}x",
+                        "נימוק תמחור בלייב": cal.rationale,
+                    })
+                st.dataframe(pd.DataFrame(cal_rows), hide_index=True, width="stretch")
+        else:
+            st.info("לא נמצאו מרווחי זמן זמינים בין הפקיעות השונות בנתוני ה-DDE.")
+    else:
+        st.info(dde_result.status_message)
+
+    if auto_refresh:
+        time.sleep(30)
+        st.rerun()
+
+    st.markdown("---")
+
+    # 5. גרפי היסטוריית TA-35 ו-VTA35
     hist_left, hist_right = st.columns(2)
     with hist_left:
         st.subheader("ת״א־35 — 252 ימי נתונים")
@@ -302,7 +505,107 @@ with tab_hero:
             st.info("VTA35 חסר; מדדי VRP ואחוזון לא יחושבו.")
 
 # -----------------------------------------------------------------------------
-# TAB 2: INDICATORS — אינדיקטורים מורחבים
+# TAB 2: SHORT-TERM TRADES — טריידים קצרי טווח (1-3 ימים)
+# -----------------------------------------------------------------------------
+with tab_shortterm:
+    st.subheader("⚡ המלצות לטריידים קצרי טווח (1 ו-3 ימי מסחר) לאור נתוני ה-DDE")
+    st.caption("תצוגת מנהלים נקייה: ניתוח מילולי מפורט ונימוקי מסחר, ללא שרשרת אופציות עמוסה, בתוספת גרף Payoff משולב מניפת הסתברות.")
+
+    st_horizon = int(
+        st.radio(
+            "בחירת אופק הטרייד הקצר:",
+            options=[1, 3],
+            horizontal=True,
+            index=0,
+            format_func=lambda v: f"{v} יום מסחר ({'פקיעה שבועית / יום קדימה' if v==1 else '3 ימים קדימה'})",
+            key="shortterm_horizon_choice",
+        )
+    )
+
+    st_dde_res = analyze_dde_options_data(
+        spot_override=last_close_val,
+        prob_rise=latest_prob if 'latest_prob' in locals() else 0.50,
+    )
+
+    if st_dde_res.weekly_chain or st_dde_res.monthly_chain:
+        exp_h = st_dde_res.expectations.get(st_horizon)
+        iv_val = exp_h.implied_volatility if exp_h else 0.15
+
+        proposal, rationale = get_shortterm_recommendation(
+            weekly_chain=st_dde_res.weekly_chain,
+            monthly_chain=st_dde_res.monthly_chain,
+            spot_price=st_dde_res.spot_price,
+            horizon_days=st_horizon,
+            prob_rise=latest_prob if 'latest_prob' in locals() else 0.50,
+            implied_vol=iv_val,
+        )
+
+        if proposal and exp_h:
+            st.markdown(f"### 📌 הטרייד המומלץ: **{proposal.strategy_name}**")
+
+            # כרטיסי תמצית מנהלים
+            sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+            sc1.metric("זיכוי/חיוב נטו", f"{proposal.net_credit_debit_nis:+.0f} ש״ח", help="חיובי = Net Credit, שלילי = Net Debit")
+            sc2.metric("רווח מרבי", f"{proposal.max_profit_nis:,.0f} ש״ח" if proposal.max_profit_nis != float('inf') else "בלתי מוגבל")
+            sc3.metric("הפסד מרבי", f"{proposal.max_loss_nis:,.0f} ש״ח")
+            sc4.metric("סיכוי הצלחה (PoP)", f"{proposal.probability_of_profit:.1%}")
+            sc5.metric("תוחלת רווח ($EV$)", f"{proposal.expected_value_nis:+.0f} ש״ח", help="תוחלת מתמטית משוקללת סיכון")
+
+            st.markdown("---")
+
+            # מלל ניתוח ונימוקי מסחר מפורטים
+            col_info1, col_info2 = st.columns([1.1, 0.9])
+            with col_info1:
+                st.markdown("##### 📝 ניתוח מילולי וסיבות להמלצה")
+                st.markdown(rationale)
+                st.caption(f"נקודות איזון בפקיעה (Breakeven): **{', '.join([f'{be:,.1f}' for be in proposal.breakeven_points])}** נקודות")
+
+            with col_info2:
+                st.markdown("##### 🛒 רגלי הטרייד לביצוע")
+                leg_rows = []
+                for leg in proposal.legs:
+                    leg_rows.append({
+                        "פעולה": "קנייה (Buy)" if leg.action == "Buy" else "מכירה (Sell)",
+                        "סוג אופציה": leg.option_type,
+                        "סטרייק": f"{leg.strike:,.0f}",
+                        "מחיר ביצוע (ש״ח)": f"{leg.exec_price * 50:,.0f} ש״ח",
+                        "מחיר בנקודות": f"{leg.exec_price:.2f} נק'",
+                    })
+                st.dataframe(pd.DataFrame(leg_rows), hide_index=True, use_container_width=True)
+
+            st.markdown("---")
+
+            # הגרף המשולב: Payoff + מניפת הסתברות
+            st.markdown("##### 📊 תרשים Payoff בפקיעה משולב מניפת הסתברות (Live DDE Volatility)")
+            fig_st = build_shortterm_payoff_fan_chart(
+                proposal=proposal,
+                horizon_exp=exp_h,
+                spot_price=st_dde_res.spot_price,
+                multiplier=50.0,
+            )
+            st.plotly_chart(fig_st, use_container_width=True)
+
+            if st_dde_res.calendar_proposals:
+                with st.expander("⏳ הזדמנויות תמחור במרווחי זמן (Calendar Spreads — שבועית מול חודשית)", expanded=False):
+                    st.caption("מכירת אופציות שבועיות (שחיקת Theta מואצת) כנגד קניית אופציות חודשיות בסטרייק זהה.")
+                    st_cal_rows = []
+                    for cal in st_dde_res.calendar_proposals[:6]:
+                        st_cal_rows.append({
+                            "אסטרטגיה": cal.strategy_name,
+                            "סטרייק": f"{cal.strike:,.0f}",
+                            "סוג אופציה": cal.option_type,
+                            "עלות נטו (ש״ח)": f"{cal.net_debit_nis:,.0f} ש״ח",
+                            "עלות בנקודות": f"{cal.net_debit_pts:.2f} נק'",
+                            "יתרון שחיקה (Theta)": f"{cal.time_decay_ratio:.1f}x",
+                        })
+                    st.dataframe(pd.DataFrame(st_cal_rows), hide_index=True, use_container_width=True)
+        else:
+            st.warning(rationale)
+    else:
+        st.info("אין נתוני אופציות DDE זמינים. אנא ודא כי קבצי ה-DDE קיימים בתיקיית הפרויקט.")
+
+# -----------------------------------------------------------------------------
+# TAB 3: INDICATORS — אינדיקטורים מורחבים
 # -----------------------------------------------------------------------------
 with tab_indicators:
     st.subheader("📊 אינדיקטורים טכניים ומדדי תנודתיות")
@@ -504,10 +807,10 @@ with tab_research:
 # TAB 4: DATA & HEALTH — עדכון נתונים ובריאות המערכת
 # -----------------------------------------------------------------------------
 with tab_data:
-    st.subheader("⚙️ עדכון נתונים מבורסת תל אביב")
+    st.subheader("⚙️ עדכון נתונים וסנכרון כל סדרות המערכת")
     st.write(
-        "הורד מהבורסה קובץ סוף־יום לטווח של 3 שנים, ולאחר מכן העלה אותו כאן. "
-        "VTA35 אופציונלי אך מומלץ למדדי התנודתיות הגלומה."
+        "העלאת קובץ ת״א־35 מעדכנת את נתוני הבורסה בת״א ומסנכרנת אוטומטית את כל מקורות המידע במערכת: "
+        "ת״א־35, VTA35, מדדי VIX מארה״ב (Cboe) ושער דולר (USD/ILS)."
     )
     link_left, link_right = st.columns(2)
     link_left.link_button(
@@ -530,7 +833,7 @@ with tab_data:
             "קובץ VTA35 (רשות)", type=("csv",), key="vta35_csv"
         )
         submitted = st.form_submit_button(
-            "בדיקה ועדכון הנתונים", type="primary", width="stretch"
+            "בדיקה ועדכון כל מקורות הנתונים", type="primary", width="stretch"
         )
     if submitted:
         if ta35_file is None:
@@ -540,7 +843,7 @@ with tab_data:
             if vta35_file is not None:
                 payloads["VTA35"] = vta35_file.getvalue()
             try:
-                with st.spinner("בודק את הקבצים ומעדכן את מסד הנתונים…"):
+                with st.spinner("בודק את הקבצים ומסנכרן את כל סדרות הנתונים במערכת…"):
                     result = import_tase_uploads(
                         SETTINGS.database_path, PROJECT_ROOT / "downloads", payloads
                     )
@@ -552,7 +855,7 @@ with tab_data:
                     f"{result.latest_dates[symbol]:%d/%m/%Y}"
                     for symbol in result.observations
                 )
-                st.success(f"הנתונים עודכנו בהצלחה. {details}")
+                st.success(f"הנתונים עודכנו בהצלחה עבור כל המקורות! {details}")
                 st.rerun()
 
     st.markdown("---")

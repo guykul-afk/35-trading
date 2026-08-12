@@ -99,6 +99,31 @@ class TaseUploadTests(unittest.TestCase):
             self.assertEqual(len(history), 30)
             self.assertEqual(history[-1].session_date, date(2026, 7, 30))
 
+    def test_incremental_upload_accepts_small_files_when_database_exists(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "data" / "lite.sqlite3"
+            downloads = root / "downloads"
+            first = ta35_csv(end_day=25)
+            import_tase_uploads(database, downloads, {"TA35": first})
+
+            # Small 3-day update file
+            small_update = (
+                "שם המדד;תא 35\n"
+                "תאריך המסחר;שער פתיחה;גבוה;נמוך;שער נעילה\n"
+                "26/07/2026;2524;2531;2521;2526\n"
+                "27/07/2026;2525;2532;2522;2527\n"
+                "28/07/2026;2526;2533;2523;2528\n"
+            ).encode("utf-8")
+
+            result = import_tase_uploads(database, downloads, {"TA35": small_update})
+
+            self.assertEqual(result.observations["TA35"], 3)
+            self.assertEqual(result.latest_dates["TA35"], date(2026, 7, 28))
+            history = SQLiteRepository(database).bar_history("TA35")
+            self.assertEqual(len(history), 28)
+            self.assertEqual(history[-1].close, 2528)
+
 
 if __name__ == "__main__":
     unittest.main()

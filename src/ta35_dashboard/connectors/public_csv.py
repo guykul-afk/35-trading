@@ -48,20 +48,55 @@ ALIASES = {
         "תאריךהמסחר",
         "תאריךושעה",
         "מועדתאריך",
+        "מועד",
+        "תאריכים",
+        "תאריךמדד",
+        "יום",
     },
-    "open": {"open", "opening", "openingrate", "שערפתיחה", "פתיחה"},
-    "high": {"high", "highrate", "שערגבוה", "גבוה"},
-    "low": {"low", "lowrate", "שערנמוך", "נמוך"},
+    "open": {
+        "open",
+        "opening",
+        "openingrate",
+        "openprice",
+        "openingprice",
+        "שערפתיחה",
+        "פתיחה",
+        "מדדפתיחה",
+    },
+    "high": {
+        "high",
+        "highrate",
+        "highprice",
+        "שערגבוה",
+        "גבוה",
+        "מדדגבוה",
+    },
+    "low": {
+        "low",
+        "lowrate",
+        "lowprice",
+        "שערנמוך",
+        "נמוך",
+        "מדדנמוך",
+    },
     "close": {
         "close",
         "closing",
         "closingrate",
+        "closeprice",
+        "closingprice",
         "last",
         "value",
         "obsvalue",
         "שערנעילה",
         "נעילה",
+        "סגירה",
+        "שערסגירה",
         "שער",
+        "שערבסיס",
+        "מדדסגירה",
+        "מדדנעילה",
+        "ערךמדד",
     },
 }
 
@@ -73,9 +108,16 @@ def _csv_table(text: str) -> str:
     date_keys = {_key(value) for value in ALIASES["date"]}
     close_keys = {_key(value) for value in ALIASES["close"]}
     for index, line in enumerate(lines[:25]):
-        columns = next(csv.reader([line]), [])
-        keys = {_key(column) for column in columns}
-        if keys & date_keys and keys & close_keys:
+        # Try splitting with regex on common separators (comma, semicolon, tab, pipe)
+        columns = [col.strip('"\'' ) for col in re.split(r'[,;\t|]', line)]
+        keys = {_key(column) for column in columns if column}
+        has_date = bool(keys & date_keys) or any(
+            any(m in k for m in ("date", "time", "תאריך", "מועד")) for k in keys
+        )
+        has_close = bool(keys & close_keys) or any(
+            any(m in k for m in ("close", "closing", "last", "נעילה", "סגירה", "שער")) for k in keys
+        )
+        if has_date and has_close:
             return "\n".join(lines[index:])
     return text
 
@@ -85,17 +127,49 @@ def _column(frame: pd.DataFrame, name: str, required: bool = True) -> str | None
     for alias in ALIASES[name]:
         if _key(alias) in normalized:
             return normalized[_key(alias)]
-    # TASE exports have used small label variations over time (for example
-    # "תאריך המסחר" rather than "תאריך מסחר").  After exact aliases, accept
-    # unambiguous headers which contain a date/time marker.
+
     if name == "date":
         matches = [
             original
             for key, original in normalized.items()
-            if any(marker in key for marker in ("date", "time", "תאריך", "מועד"))
+            if any(marker in key for marker in ("date", "time", "תאריך", "מועד", "יום"))
         ]
-        if len(matches) == 1:
+        if matches:
+            primary = [
+                m for m in matches
+                if any(k in _key(m) for k in ("מסחר", "trade", "trading", "session", "מדד"))
+                and not any(k in _key(m) for k in ("עדכון", "יצירה"))
+            ]
+            return primary[0] if primary else matches[0]
+
+    if name == "close":
+        matches = [
+            original
+            for key, original in normalized.items()
+            if any(marker in key for marker in ("close", "closing", "last", "נעילה", "סגירה", "שער"))
+        ]
+        if matches:
+            primary = [
+                m for m in matches
+                if any(k in _key(m) for k in ("נעילה", "סגירה", "close", "closing", "שערסגירה", "שערנעילה"))
+                and not any(k in _key(m) for k in ("פתיחה", "גבוה", "נמוך", "בסיס", "שינוי"))
+            ]
+            return primary[0] if primary else matches[0]
+
+    if name in ("open", "high", "low"):
+        markers = {
+            "open": ("open", "פתיחה"),
+            "high": ("high", "גבוה"),
+            "low": ("low", "נמוך"),
+        }[name]
+        matches = [
+            original
+            for key, original in normalized.items()
+            if any(m in key for m in markers)
+        ]
+        if matches:
             return matches[0]
+
     if required:
         raise ValueError(f"CSV is missing a recognizable {name} column")
     return None
@@ -113,19 +187,31 @@ def _read_bytes(location: str | Path) -> bytes:
 
 def _parse_date(value: object, *, dayfirst: bool) -> pd.Timestamp:
     cleaned = str(value).strip()
-    if re.fullmatch(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", cleaned):
+    if not cleaned:
+        return pd.NaT
+    # Strip time component if present
+    cleaned = cleaned.split()[0]
+    # Replace dots with dashes or slashes
+    if re.fullmatch(r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}", cleaned):
+        cleaned_date = re.sub(r"[./]", "-", cleaned)
         return pd.to_datetime(
-            cleaned.replace("/", "-"), format="%Y-%m-%d", errors="coerce"
+            cleaned_date, format="%Y-%m-%d", errors="coerce"
         )
-    return pd.to_datetime(cleaned, dayfirst=dayfirst, errors="coerce")
+    cleaned_date = re.sub(r"[.]", "/", cleaned)
+    return pd.to_datetime(cleaned_date, dayfirst=dayfirst, errors="coerce")
 
 
 def read_series(spec: CsvSeriesSpec) -> tuple[DailyBar, ...]:
     raw = _read_bytes(spec.location)
     try:
         text = raw.decode("utf-8-sig")
+        if "\x00" in text:
+            text = raw.decode("utf-16")
     except UnicodeDecodeError:
-        text = raw.decode("cp1255")
+        try:
+            text = raw.decode("utf-16")
+        except UnicodeDecodeError:
+            text = raw.decode("cp1255", errors="replace")
     # The official site has supplied both comma and semicolon-separated CSVs.
     # Let pandas detect the separator after stripping any export preamble.
     frame = pd.read_csv(StringIO(_csv_table(text)), sep=None, engine="python")

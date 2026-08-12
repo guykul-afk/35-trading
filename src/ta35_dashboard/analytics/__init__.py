@@ -9,6 +9,7 @@ from .signals import arrow, direction, heuristic_strength, indicator_signal
 from .strategies import (
     StrategyCandidate,
     StrategyRecommendation,
+    calculate_strategy_strikes,
     recommend_strategy,
 )
 from .volatility import (

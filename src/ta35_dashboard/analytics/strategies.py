@@ -7,7 +7,9 @@ strategy family and statistical scenario range.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import math
+from typing import Any
 
 from .volatility import probability_band
 
@@ -37,6 +39,288 @@ class StrategyRecommendation:
     warnings: tuple[str, ...]
     scenario_fit: tuple[tuple[str, str, str], ...]
     premium_sale_eligible: bool
+    suggested_strikes: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+def calculate_strategy_strikes(
+    spot: float | None,
+    forecast_volatility: float | None,
+    horizon_days: int,
+    strategy_name: str | None,
+    regime: str = "רגוע",
+    step: int = 10,
+) -> dict[str, dict[str, Any]]:
+    """Derive recommended option legs by risk profile based on standard deviations."""
+    if spot is None or forecast_volatility is None or spot <= 0 or forecast_volatility <= 0:
+        return {}
+
+    one_sigma = spot * forecast_volatility * math.sqrt(horizon_days / 252.0)
+    is_stressed = regime in {"זהירות", "לחץ גבוה"}
+    stress_buffer = 0.5 if is_stressed else 0.0
+    skew_put_offset = 0.2  # Put skew offset OTM
+
+    def round_strike(val: float) -> int:
+        return int(round(val / step) * step)
+
+    profiles: dict[str, dict[str, Any]] = {}
+
+    for risk_key, risk_label in [
+        ("balanced", "מאוזן (Balanced)"),
+        ("conservative", "שמרני (Conservative)"),
+        ("aggressive", "אגרסיבי (Aggressive)"),
+    ]:
+        legs: list[dict[str, Any]] = []
+        name = (strategy_name or "").lower()
+
+        # 1. Bull Call Spread
+        if "bull call" in name:
+            if risk_key == "conservative":
+                lc_sigma, sc_sigma = 0.0, 1.5
+            elif risk_key == "balanced":
+                lc_sigma, sc_sigma = 0.5, 1.2
+            else:
+                lc_sigma, sc_sigma = 0.5, 0.8
+
+            k1 = round_strike(spot + lc_sigma * one_sigma)
+            k2 = round_strike(spot + sc_sigma * one_sigma)
+            if k2 <= k1:
+                k2 = k1 + step
+
+            legs = [
+                {"action": "Buy", "option_type": "Call", "strike": k1, "quantity": 1, "label": "Long Call (קנייה)"},
+                {"action": "Sell", "option_type": "Call", "strike": k2, "quantity": 1, "label": "Short Call (מכירה)"},
+            ]
+
+        # 2. Bull Put Spread
+        elif "bull put" in name:
+            if risk_key == "conservative":
+                sp_sigma = 1.5 + skew_put_offset + stress_buffer
+                lp_sigma = 2.0 + skew_put_offset
+            elif risk_key == "balanced":
+                sp_sigma = 1.0 + skew_put_offset + stress_buffer
+                lp_sigma = 1.5 + skew_put_offset
+            else:
+                sp_sigma = 0.5 + skew_put_offset + stress_buffer
+                lp_sigma = 1.0 + skew_put_offset
+
+            k2 = round_strike(spot - sp_sigma * one_sigma)  # Short Put (higher strike)
+            k1 = round_strike(spot - lp_sigma * one_sigma)  # Long Put (lower strike)
+            if k2 <= k1:
+                k1 = k2 - step
+
+            legs = [
+                {"action": "Buy", "option_type": "Put", "strike": k1, "quantity": 1, "label": "Long Put (הגנה)"},
+                {"action": "Sell", "option_type": "Put", "strike": k2, "quantity": 1, "label": "Short Put (מכירה)"},
+            ]
+
+        # 3. Bear Put Spread
+        elif "bear put" in name:
+            if risk_key == "conservative":
+                lp_sigma, sp_sigma = 0.0, 1.5 + skew_put_offset
+            elif risk_key == "balanced":
+                lp_sigma, sp_sigma = 0.5 + skew_put_offset, 1.0 + skew_put_offset
+            else:
+                lp_sigma, sp_sigma = 0.5 + skew_put_offset, 0.8 + skew_put_offset
+
+            k2 = round_strike(spot - lp_sigma * one_sigma)  # Long Put (higher strike)
+            k1 = round_strike(spot - sp_sigma * one_sigma)  # Short Put (lower strike)
+            if k2 <= k1:
+                k1 = k2 - step
+
+            legs = [
+                {"action": "Buy", "option_type": "Put", "strike": k2, "quantity": 1, "label": "Long Put (קנייה)"},
+                {"action": "Sell", "option_type": "Put", "strike": k1, "quantity": 1, "label": "Short Put (מכירה)"},
+            ]
+
+        # 4. Bear Call Spread
+        elif "bear call" in name:
+            if risk_key == "conservative":
+                sc_sigma = 1.5 + stress_buffer
+                lc_sigma = 2.0
+            elif risk_key == "balanced":
+                sc_sigma = 1.0 + stress_buffer
+                lc_sigma = 1.5
+            else:
+                sc_sigma = 0.5 + stress_buffer
+                lc_sigma = 1.0
+
+            k1 = round_strike(spot + sc_sigma * one_sigma)  # Short Call (lower strike)
+            k2 = round_strike(spot + lc_sigma * one_sigma)  # Long Call (higher strike)
+            if k2 <= k1:
+                k2 = k1 + step
+
+            legs = [
+                {"action": "Sell", "option_type": "Call", "strike": k1, "quantity": 1, "label": "Short Call (מכירה)"},
+                {"action": "Buy", "option_type": "Call", "strike": k2, "quantity": 1, "label": "Long Call (הגנה)"},
+            ]
+
+        # 5. Bullish Butterfly / Broken-Wing Butterfly (פרפר Call שורי)
+        elif "shuri" in name or ("butterfly" in name and "call" in name) or "שורי" in name:
+            if risk_key == "conservative":
+                center_sigma, wing_sigma = 0.5, 0.8
+            elif risk_key == "balanced":
+                center_sigma, wing_sigma = 0.8, 0.6
+            else:
+                center_sigma, wing_sigma = 1.0, 0.5
+
+            k2 = round_strike(spot + center_sigma * one_sigma)
+            w_pts = max(step, round_strike(wing_sigma * one_sigma))
+            k1 = k2 - w_pts
+            k3 = k2 + int(round(1.5 * w_pts / step) * step)  # Broken wing wider
+
+            legs = [
+                {"action": "Buy", "option_type": "Call", "strike": k1, "quantity": 1, "label": "Long Call (כנף תחתונה)"},
+                {"action": "Sell", "option_type": "Call", "strike": k2, "quantity": 2, "label": "Short 2 Calls (מרכז)"},
+                {"action": "Buy", "option_type": "Call", "strike": k3, "quantity": 1, "label": "Long Call (כנף עליונה)"},
+            ]
+
+        # 6. Bearish Butterfly / Broken-Wing Butterfly (פרפר Put דובי)
+        elif "dubi" in name or ("butterfly" in name and "put" in name) or "דובי" in name:
+            if risk_key == "conservative":
+                center_sigma, wing_sigma = 0.5 + skew_put_offset, 0.8
+            elif risk_key == "balanced":
+                center_sigma, wing_sigma = 0.8 + skew_put_offset, 0.6
+            else:
+                center_sigma, wing_sigma = 1.0 + skew_put_offset, 0.5
+
+            k2 = round_strike(spot - center_sigma * one_sigma)
+            w_pts = max(step, round_strike(wing_sigma * one_sigma))
+            k3 = k2 + w_pts
+            k1 = k2 - int(round(1.5 * w_pts / step) * step)  # Broken wing wider
+
+            legs = [
+                {"action": "Buy", "option_type": "Put", "strike": k1, "quantity": 1, "label": "Long Put (כנף תחתונה)"},
+                {"action": "Sell", "option_type": "Put", "strike": k2, "quantity": 2, "label": "Short 2 Puts (מרכז)"},
+                {"action": "Buy", "option_type": "Put", "strike": k3, "quantity": 1, "label": "Long Put (כנף עליונה)"},
+            ]
+
+        # 7. Iron Condor or Default Neutral Baseline
+        elif "iron condor" in name or not name:
+            if risk_key == "conservative":
+                sp_sigma, lp_sigma = 1.5 + skew_put_offset + stress_buffer, 2.0 + skew_put_offset
+                sc_sigma, lc_sigma = 1.5 + stress_buffer, 2.0
+            elif risk_key == "balanced":
+                sp_sigma, lp_sigma = 1.0 + skew_put_offset + stress_buffer, 1.5 + skew_put_offset
+                sc_sigma, lc_sigma = 1.0 + stress_buffer, 1.5
+            else:
+                sp_sigma, lp_sigma = 0.5 + skew_put_offset + stress_buffer, 1.0 + skew_put_offset
+                sc_sigma, lc_sigma = 0.5 + stress_buffer, 1.0
+
+            k1 = round_strike(spot - lp_sigma * one_sigma)
+            k2 = round_strike(spot - sp_sigma * one_sigma)
+            k3 = round_strike(spot + sc_sigma * one_sigma)
+            k4 = round_strike(spot + lc_sigma * one_sigma)
+
+            legs = [
+                {"action": "Buy", "option_type": "Put", "strike": k1, "quantity": 1, "label": "Long Put (כנף)"},
+                {"action": "Sell", "option_type": "Put", "strike": k2, "quantity": 1, "label": "Short Put"},
+                {"action": "Sell", "option_type": "Call", "strike": k3, "quantity": 1, "label": "Short Call"},
+                {"action": "Buy", "option_type": "Call", "strike": k4, "quantity": 1, "label": "Long Call (כנף)"},
+            ]
+
+        # 8. Iron Butterfly / Long Butterfly
+        elif "iron butterfly" in name or "butterfly" in name or "פרפר" in name:
+            if risk_key == "conservative":
+                wing_sigma = 1.5
+            elif risk_key == "balanced":
+                wing_sigma = 1.0
+            else:
+                wing_sigma = 0.5
+
+            k2 = round_strike(spot)
+            w_pts = max(step, round_strike(wing_sigma * one_sigma))
+            k1 = k2 - w_pts
+            k3 = k2 + w_pts
+
+            legs = [
+                {"action": "Buy", "option_type": "Put", "strike": k1, "quantity": 1, "label": "Long Put כנף"},
+                {"action": "Sell", "option_type": "Put", "strike": k2, "quantity": 1, "label": "Short Put מרכז"},
+                {"action": "Sell", "option_type": "Call", "strike": k2, "quantity": 1, "label": "Short Call מרכז"},
+                {"action": "Buy", "option_type": "Call", "strike": k3, "quantity": 1, "label": "Long Call כנף"},
+            ]
+
+        # 9. Call Ratio Backspread 1x2
+        elif "backspread" in name and "call" in name:
+            if risk_key == "conservative":
+                sc_sigma, lc_sigma = 0.0, 1.0
+            elif risk_key == "balanced":
+                sc_sigma, lc_sigma = 0.3, 0.8
+            else:
+                sc_sigma, lc_sigma = 0.5, 1.0
+
+            k1 = round_strike(spot + sc_sigma * one_sigma)
+            k2 = round_strike(spot + lc_sigma * one_sigma)
+            if k2 <= k1:
+                k2 = k1 + step
+
+            legs = [
+                {"action": "Sell", "option_type": "Call", "strike": k1, "quantity": 1, "label": "Short 1 Call"},
+                {"action": "Buy", "option_type": "Call", "strike": k2, "quantity": 2, "label": "Long 2 Calls"},
+            ]
+
+        # 10. Put Ratio Backspread 1x2
+        elif "backspread" in name:
+            if risk_key == "conservative":
+                sp_sigma, lp_sigma = 0.0, 1.0 + skew_put_offset
+            elif risk_key == "balanced":
+                sp_sigma, lp_sigma = 0.3 + skew_put_offset, 0.8 + skew_put_offset
+            else:
+                sp_sigma, lp_sigma = 0.5 + skew_put_offset, 1.0 + skew_put_offset
+
+            k2 = round_strike(spot - sp_sigma * one_sigma)  # Short Put (higher strike)
+            k1 = round_strike(spot - lp_sigma * one_sigma)  # Long Put (lower strike)
+            if k2 <= k1:
+                k1 = k2 - step
+
+            legs = [
+                {"action": "Sell", "option_type": "Put", "strike": k2, "quantity": 1, "label": "Short 1 Put"},
+                {"action": "Buy", "option_type": "Put", "strike": k1, "quantity": 2, "label": "Long 2 Puts"},
+            ]
+
+        # 11. Long Straddle / Strangle
+        elif "straddle" in name or "strangle" in name:
+            if risk_key == "conservative":
+                c_sigma, p_sigma = 0.5, 0.5 + skew_put_offset
+            else:
+                c_sigma, p_sigma = 0.0, 0.0
+
+            k1 = round_strike(spot - p_sigma * one_sigma)
+            k2 = round_strike(spot + c_sigma * one_sigma)
+
+            legs = [
+                {"action": "Buy", "option_type": "Put", "strike": k1, "quantity": 1, "label": "Long Put"},
+                {"action": "Buy", "option_type": "Call", "strike": k2, "quantity": 1, "label": "Long Call"},
+            ]
+
+        else:
+            k1 = round_strike(spot + 0.5 * one_sigma)
+            k2 = round_strike(spot + 1.0 * one_sigma)
+            legs = [
+                {"action": "Buy", "option_type": "Call", "strike": k1, "quantity": 1, "label": "Long Call"},
+                {"action": "Sell", "option_type": "Call", "strike": k2, "quantity": 1, "label": "Short Call"},
+            ]
+
+        summary_parts = [
+            f"{leg['action']} {leg['quantity']}x {leg['option_type']} {leg['strike']}"
+            for leg in legs
+        ]
+
+        strikes_dict: dict[str, int | None] = {
+            "long_put": next((l["strike"] for l in legs if l["action"] == "Buy" and l["option_type"] == "Put"), None),
+            "short_put": next((l["strike"] for l in legs if l["action"] == "Sell" and l["option_type"] == "Put"), None),
+            "short_call": next((l["strike"] for l in legs if l["action"] == "Sell" and l["option_type"] == "Call"), None),
+            "long_call": next((l["strike"] for l in legs if l["action"] == "Buy" and l["option_type"] == "Call"), None),
+        }
+
+        profiles[risk_key] = {
+            "label": risk_label,
+            "legs": legs,
+            "strikes": strikes_dict,
+            "summary": " · ".join(summary_parts),
+            "one_sigma_pts": round(one_sigma, 1),
+        }
+
+    return profiles
 
 
 def _candidate(name: str, rationale: str, risk_note: str) -> StrategyCandidate:
@@ -337,6 +621,13 @@ def recommend_strategy(
         ),
         ("משטר לחץ", regime, "חסום" if stressed else "תקין"),
     )
+    strikes_map = calculate_strategy_strikes(
+        spot,
+        forecast_volatility,
+        horizon_days,
+        primary.name if primary else None,
+        regime=regime,
+    )
     return StrategyRecommendation(
         status="מועמד כללי",
         primary=primary,
@@ -354,4 +645,5 @@ def recommend_strategy(
         warnings=tuple(warnings),
         scenario_fit=scenario_fit,
         premium_sale_eligible=premium_sale_eligible,
+        suggested_strikes=strikes_map,
     )
