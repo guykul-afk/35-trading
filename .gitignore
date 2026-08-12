@@ -5,5 +5,8 @@ __pycache__/
 *.egg-info/
 data/*.sqlite3
 !data/ta35_lite.sqlite3
+data/backups/
 downloads/*.csv
+*.csv
+scratch/
 .DS_Store
