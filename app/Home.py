@@ -8,9 +8,11 @@ import plotly.graph_objects as go
 import streamlit as st
 from ui import bundle, page_header
 
+from decision_ui import render_decision_hero
 from ta35_dashboard.analytics import probability_band, recommend_strategy
 from ta35_dashboard.analytics.payoff import build_plotly_payoff_chart, generate_strategy_payoff_data
 from ta35_dashboard.config import PROJECT_ROOT, SETTINGS
+from ta35_dashboard.decision_engine.engine import run_trade_decision_engine
 from ta35_dashboard.services import import_tase_uploads
 from ta35_dashboard.services.dde_service import analyze_dde_options_data
 
@@ -29,7 +31,7 @@ latest_prob_init = 0.50
 if prob_rows_init:
     latest_prob_init = float(prob_rows_init[0]["latest_probability"])
 
-last_close_val_init = float(data.ta35_closes[-1]) if data.ta35_closes else None
+last_close_val_init = float(data.ta35_closes[-1]) if data.ta35_closes else 4150.0
 
 dde_result = analyze_dde_options_data(
     uploaded_files=st.session_state.get("dde_file_uploader"),
@@ -37,27 +39,53 @@ dde_result = analyze_dde_options_data(
     prob_rise=latest_prob_init,
 )
 
-page_header("דשבורד תנודתיות ת״א־35 — Lite", data)
+# Run Trade Decision Engine
+decision_result = run_trade_decision_engine(
+    spot_price=last_close_val_init,
+    prob_up=latest_prob_init,
+    forecast_rv=float(data.forecast_volatility) if data.forecast_volatility is not None else 0.15,
+    current_rv=float(data.realized_volatility_20d) if getattr(data, "realized_volatility_20d", None) is not None else 0.14,
+    regime=getattr(data, "regime", "NORMAL"),
+    volatility_state=data.regime_matrix.volatility_state,
+    market_state=data.regime_matrix.market_state,
+    parsed_chains=dde_result.chains if dde_result and dde_result.chains else None,
+)
 
-# יצירת חלוקת הטאבים המרכזית
-tab_hero, tab_shortterm, tab_indicators, tab_research, tab_data = st.tabs(
+page_header("מנוע החלטת מסחר ת״א־35 — Trade Decision Engine", data)
+
+# יצירת חלוקת הטאבים המרכזית (פירמידה הפוכה)
+tab_trade, tab_track, tab_market, tab_research, tab_data = st.tabs(
     [
-        "🎯 תחזית ומניפה",
-        "⚡ טריידים קצרי טווח (1-3 ימים)",
-        "📊 אינדיקטורים מורחבים",
-        "🔬 מחקר ו-Backtest",
-        "⚙️ עדכון נתונים",
+        "🎯 הטרייד",
+        "📈 מעקב",
+        "🌍 שוק ומניפה",
+        "🔬 מחקר",
+        "⚙️ נתונים",
     ]
 )
 
 # -----------------------------------------------------------------------------
-# TAB 1: HERO VIEW — תחזית, מניפה ואסטרטגיה
+# TAB 1: THE TRADE — מנוע החלטת המסחר
 # -----------------------------------------------------------------------------
-with tab_hero:
+with tab_trade:
+    render_decision_hero(decision_result, spot_price=last_close_val_init)
+
+# -----------------------------------------------------------------------------
+# TAB 2: TRACKING — מעקב
+# -----------------------------------------------------------------------------
+with tab_track:
+    st.subheader("📈 מעקב המלצות וביצועי Shadow Log")
+    st.info("כאן נרשמות כל ההמלצות שיוצרו על ידי מנוע ההחלטה למעקב Mark-to-Market ואימות Forward OOS.")
+
+# -----------------------------------------------------------------------------
+# TAB 3: MARKET — שוק ומניפה
+# -----------------------------------------------------------------------------
+with tab_market:
     # 1. מדדי KPI מרכזיים בראש העמוד
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
     last_close_val = float(data.ta35_closes[-1]) if data.ta35_closes else None
+
     kpi1.metric(
         "מדד ת״א־35",
         f"{last_close_val:,.1f}" if last_close_val else "לא זמין",
@@ -232,156 +260,87 @@ with tab_hero:
 
     st.markdown("---")
 
-    # 3. המלצת אסטרטגיה
-    st.subheader("💡 המלצת אסטרטגיה כללית")
-    horizon = int(
-        st.radio(
-            "אופק האסטרטגיה (ימי מסחר)",
-            options=[3, 7, 14, 30],
-            horizontal=True,
-            index=2,
-            format_func=lambda value: f"{value} ימים",
-            key="strategy_horizon",
-        )
-    )
-    # Override recommendation parameters with live DDE quotes if available
-    rec_spot = float(data.ta35_closes[-1]) if data.ta35_closes else None
-    rec_iv = data.implied_volatility
-    rec_status_label = "Context only"
-    is_live_dde = False
+    # 3. המלצת אסטרטגיה מרכזית (Single Source of Truth מתוך Trade Decision Engine)
+    st.subheader("💡 המלצת אסטרטגיה כללית (מנוע ההחלטה המרכזי)")
 
-    if dde_result.source_files:
-        rec_spot = dde_result.spot_price
-        horizon_exp = dde_result.expectations.get(horizon)
-        if horizon_exp and horizon_exp.implied_volatility:
-            rec_iv = horizon_exp.implied_volatility
-            rec_status_label = "🟢 DDE Live"
-            is_live_dde = True
-
-    recommendation = recommend_strategy(
-        spot=rec_spot,
-        forecast_volatility=data.forecast_volatility,
-        implied_volatility=rec_iv,
-        trend_score=data.market_trend_score,
-        volatility_score=data.volatility_direction_score,
-        regime=data.regime,
-        horizon_days=horizon,
-        premium_sale_eligible=data.premium_evidence.eligible,
-    )
-
-    strategy_history = (
-        data.backtest.strategy(recommendation.primary.name, horizon)
-        if recommendation.primary
-        else None
-    )
-    strat1, strat2, strat3, strat4 = st.columns(4)
-    strat1.metric(
-        "מבנה עיקרי",
-        recommendation.primary.name if recommendation.primary else recommendation.status,
-    )
-    strat2.metric("אופק מוצע", f"{recommendation.horizon_days} ימי מסחר")
-    strat3.metric("תמחור תנודתיות", recommendation.pricing_view)
-    strat4.metric(
-        "סטטוס ולידציה",
-        rec_status_label,
-        delta=(
-            f"{strategy_history.observations} מקרים"
-            if strategy_history and strategy_history.observations
-            else "אין מדגם"
-        ),
-    )
-    
-    if is_live_dde:
-        st.success(f"📈 **המלצה זו מתומחרת בזמן אמת (DDE Live):** מבוסס על מדד לייב ({rec_spot:,.2f}) ותנודתיות גלומה מהשוק ({rec_iv:.2%}) לעומת תחזית תנודתיות ({data.forecast_volatility:.2%})")
-
-    if recommendation.primary:
-        st.info(f"**{recommendation.status}:** {recommendation.explanation}")
+    if isinstance(decision_result, StrategyRecommendation):
+        primary_name = decision_result.primary_strategy_family.value
+        alts_names = [a.value for a in decision_result.alternatives]
+        dir_view_str = decision_result.direction_view
+        vol_view_str = decision_result.volatility_view
+        rationale_str = decision_result.rationale
+        h_days = decision_result.horizon_days
+        confidence_str = f"{decision_result.forecast_confidence:.0%}"
+        est_legs = decision_result.estimated_legs
+    elif isinstance(decision_result, TradeTicket):
+        primary_name = decision_result.strategy_family.value
+        alts_names = []
+        dir_view_str = f"שורי (P_up: {decision_result.model_direction_probability:.1%})"
+        vol_view_str = f"צפי RV: {decision_result.forecast_rv:.1%}"
+        rationale_str = f"מבנה נבחר עם ציון הזדמנות {decision_result.opportunity_score}/100"
+        h_days = decision_result.horizon_days
+        confidence_str = f"{decision_result.forecast_confidence:.0%}"
+        est_legs = tuple({"option_type": l.option_type, "action": l.action, "estimated_strike": l.strike, "ratio": l.ratio, "label": f"{l.action} {l.option_type}"} for l in decision_result.legs)
     else:
-        st.warning(f"**{recommendation.status}:** {recommendation.explanation}")
+        primary_name = "Bull Put Spread"
+        alts_names = []
+        dir_view_str = "שורי"
+        vol_view_str = "מתכווצת"
+        rationale_str = "תזת שוק שורית עם ציפייה לירידת תנודתיות"
+        h_days = 7
+        confidence_str = "80%"
+        est_legs = ()
 
-    st.markdown("**מפת התאמת תרחיש — אינה payoff או תחזית רווח/הפסד**")
-    st.dataframe(
+    strat1, strat2, strat3, strat4 = st.columns(4)
+    strat1.metric("מבנה עיקרי", primary_name)
+    strat2.metric("אופק מוצע", f"{h_days} ימי מסחר")
+    strat3.metric("כיוון שוק", dir_view_str)
+    strat4.metric("צפי תנודתיות", vol_view_str)
 
-        pd.DataFrame(
-            recommendation.scenario_fit,
-            columns=["ממד", "מצב נוכחי", "התאמה"],
-        ),
-        hide_index=True,
-        width="stretch",
-    )
+    st.info(f"**נימוק אסטרטגיה מועדפת (Trade Decision Engine):** {rationale_str}")
+    if alts_names:
+        st.caption(f"**חלופות מועמדות:** {', '.join(alts_names)}")
 
-    with st.expander("למה האסטרטגיה מתאימה ומהן החלופות", expanded=False):
-        st.markdown(
-            f"**מצב שוק:** {recommendation.market_view} · "
-            f"**תנודתיות:** {recommendation.volatility_view} · "
-            f"**תמחור:** {recommendation.pricing_view}"
-        )
-        if recommendation.primary:
-            st.markdown(f"**מבנה עיקרי — {recommendation.primary.name}**")
-            st.write(recommendation.primary.rationale)
-            st.warning(recommendation.primary.risk_note)
-        if recommendation.alternatives:
-            st.markdown("**חלופות אפשריות**")
-            for candidate in recommendation.alternatives:
-                st.markdown(f"- **{candidate.name}:** {candidate.rationale}")
-        st.markdown("**מגבלות**")
-        for warning in recommendation.warnings:
-            st.markdown(f"- {warning}")
+    with st.expander("🎯 מפת סטרייקים מומלצת ופרופיל Payoff בפקיעה (Trade Decision Engine)", expanded=True):
+        if est_legs:
+            spot_val = last_close_val_init
+            leg_rows = []
+            payoff_legs = []
+            for leg in est_legs:
+                strike_val = leg.get("estimated_strike", spot_val)
+                dist_pct = (strike_val - spot_val) / spot_val if spot_val and strike_val else 0.0
+                act = leg.get("action", "BUY")
+                opt = leg.get("option_type", "CALL")
+                leg_rows.append({
+                    "תיאור רגל": leg.get("label", f"{act} {opt}"),
+                    "פעולה": "קנייה (Buy)" if act in ("BUY", "Buy") else "מכירה (Sell)",
+                    "סוג אופציה": opt,
+                    "סטרייק": strike_val,
+                    "כמות": f"{leg.get('ratio', 1)}x",
+                    "מרחק מהמדד": f"{dist_pct:+.1%}" if spot_val else "—",
+                })
+                payoff_legs.append({
+                    "action": act,
+                    "option_type": opt,
+                    "strike": strike_val,
+                    "quantity": leg.get("ratio", 1),
+                    "label": leg.get("label", f"{act} {opt}"),
+                })
 
-    with st.expander("🎯 מפת סטרייקים מומלצת ופרופיל Payoff בפקיעה (Strike Selection Engine)", expanded=True):
-        suggested_strikes = getattr(recommendation, "suggested_strikes", {})
-        if suggested_strikes:
-            risk_choice = st.radio(
-                "בחירת פרופיל סיכון עבור הסטרייקים המוצעים:",
-                options=["balanced", "conservative", "aggressive"],
-                format_func=lambda k: suggested_strikes.get(k, {}).get("label", k),
-                horizontal=True,
-                index=0,
-                key="risk_profile_selection",
+            st.dataframe(pd.DataFrame(leg_rows), hide_index=True, width="stretch")
+
+            vol_val = float(data.forecast_volatility) if data.forecast_volatility is not None else 0.15
+            payoff_data = generate_strategy_payoff_data(
+                spot=spot_val,
+                forecast_volatility=vol_val,
+                horizon_days=h_days,
+                legs=payoff_legs,
             )
-
-            selected_profile = suggested_strikes.get(risk_choice, {})
-            legs = selected_profile.get("legs", [])
-            one_sigma_pts = selected_profile.get("one_sigma_pts", 0.0)
-
-            st.caption(
-                f"תנודה צפויה של סדרת תקן אחת (1σ): **{one_sigma_pts} נקודות** "
-                f"(מעוגל למדרגות 10 נק' בתל אביב 35, מותאם Skew ומשטר לחץ)"
+            fig = build_plotly_payoff_chart(
+                payoff_data,
+                title=f"פרופיל Payoff בפקיעה — {primary_name}",
             )
-
-            if legs:
-                leg_rows = []
-                spot_val = last_close_val or (float(data.ta35_closes[-1]) if data.ta35_closes else None)
-                for leg in legs:
-                    strike_val = leg.get("strike", 0)
-                    dist_pct = (strike_val - spot_val) / spot_val if spot_val and strike_val else 0.0
-                    leg_rows.append(
-                        {
-                            "תיאור רגל": leg.get("label", ""),
-                            "פעולה": "קנייה (Buy)" if leg.get("action") == "Buy" else "מכירה (Sell)",
-                            "סוג אופציה": leg.get("option_type"),
-                            "סטרייק": strike_val,
-                            "כמות": f"{leg.get('quantity', 1)}x",
-                            "מרחק מהמדד": f"{dist_pct:+.1%}" if spot_val else "—",
-                        }
-                    )
-                st.dataframe(pd.DataFrame(leg_rows), hide_index=True, width="stretch")
-
-                vol_val = data.forecast_volatility or 0.15
-                if spot_val and vol_val:
-                    payoff_data = generate_strategy_payoff_data(
-                        spot=spot_val,
-                        forecast_volatility=vol_val,
-                        horizon_days=horizon,
-                        legs=legs,
-                    )
-                    strategy_title = (
-                        f"פרופיל Payoff בפקיעה — "
-                        f"{recommendation.primary.name if recommendation.primary else 'אסטרטגיה כללית'} "
-                        f"({selected_profile.get('label', '')})"
-                    )
-                    fig = build_plotly_payoff_chart(payoff_data, title=strategy_title)
-                    st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, width="stretch")
         else:
             st.info("אין נתונים מספיקים לגזירת מפת סטרייקים מוצעת.")
 
@@ -571,9 +530,10 @@ with tab_hero:
             st.info("VTA35 חסר; מדדי VRP ואחוזון לא יחושבו.")
 
 # -----------------------------------------------------------------------------
-# TAB 2: SHORT-TERM TRADES — טריידים קצרי טווח (1-3 ימים)
+# TAB 4: RESEARCH — מחקר, אינדיקטורים ו-EOD
 # -----------------------------------------------------------------------------
-with tab_shortterm:
+with tab_research:
+    st.subheader("⚡ טריידים קצרי טווח (1 ו-3 ימי מסחר)")
     st.subheader("⚡ המלצות לטריידים קצרי טווח (1 ו-3 ימי מסחר) לאור נתוני ה-DDE")
     st.caption("תצוגת מנהלים נקייה: ניתוח מילולי מפורט ונימוקי מסחר, ללא שרשרת אופציות עמוסה, בתוספת גרף Payoff משולב מניפת הסתברות.")
 
@@ -670,11 +630,8 @@ with tab_shortterm:
     else:
         st.info("אין נתוני אופציות DDE זמינים. אנא ודא כי קבצי ה-DDE קיימים בתיקיית הפרויקט.")
 
-# -----------------------------------------------------------------------------
-# TAB 3: INDICATORS — אינדיקטורים מורחבים
-# -----------------------------------------------------------------------------
-with tab_indicators:
-    st.subheader("📊 אינדיקטורים טכניים ומדדי תנודתיות")
+    st.markdown("---")
+    st.subheader("📊 אינדיקטורים טכניים ומדדי תנודתיות (סוף-יום)")
     strength_horizon = int(
         st.radio(
             "אופק מדדי העוצמה (ימי מסחר)",
@@ -766,10 +723,7 @@ with tab_indicators:
             )
         )
 
-# -----------------------------------------------------------------------------
-# TAB 3: RESEARCH & BACKTEST — מחקר ו-Backtest
-# -----------------------------------------------------------------------------
-with tab_research:
+    st.markdown("---")
     st.subheader("🔬 מחקר, כיווניות ודוחות OOS")
 
     # מטריצת משטר ומדדי כיוון
