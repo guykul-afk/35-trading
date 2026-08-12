@@ -236,3 +236,48 @@ class SQLiteRepository:
             )
             for row in rows
         ]
+
+    def insert_chain_snapshots(
+        self,
+        chain: Any,  # ParsedOptionChain
+        source_file: str,
+        timestamp: datetime | None = None,
+    ) -> None:
+        """Insert option chain snapshot quotes into SQLite DB for historical persistence."""
+        if not hasattr(chain, "quotes") or not chain.quotes:
+            return
+        self.initialize()
+        ts_str = (timestamp or datetime.now(UTC)).isoformat()
+        records = [
+            (
+                ts_str,
+                source_file,
+                chain.expiration_label,
+                chain.days_to_expiration,
+                chain.synthetic_spot,
+                q.strike,
+                q.call_bid,
+                q.call_ask,
+                q.call_last,
+                q.call_bid_size,
+                q.call_ask_size,
+                q.call_iv,
+                q.put_bid,
+                q.put_ask,
+                q.put_last,
+                q.put_bid_size,
+                q.put_ask_size,
+                q.put_iv,
+            )
+            for q in chain.quotes
+        ]
+        with self._connect() as connection:
+            connection.executemany(
+                """INSERT INTO chain_snapshots
+                   (timestamp, source_file, expiration_label, days_to_expiration, synthetic_spot, strike,
+                    call_bid, call_ask, call_last, call_bid_size, call_ask_size, call_iv,
+                    put_bid, put_ask, put_last, put_bid_size, put_ask_size, put_iv)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                records,
+            )
+

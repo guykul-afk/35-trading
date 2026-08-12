@@ -2,15 +2,18 @@
 
 Prices candidate option strategies (vertical spreads, straddles, and inter-expiration calendar spreads)
 using actual live option chain Bid/Ask and Mid quotes. Uses official TASE contract multiplier of 50 NIS/point.
+Calculates Risk-Neutral Density (RND) via Breeden-Litzenberger for true Probability of Profit (POP) and Expected Value (EV).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import numpy as np
 from typing import Any
 
 from ta35_dashboard.connectors.dde_parser import ParsedOptionChain, OptionQuote
+from ta35_dashboard.analytics.implied_vol import bs_call_price, bs_put_price
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +71,7 @@ class CalendarSpreadProposal:
 def _get_clean_exec_price(
     quote: OptionQuote, option_type: str, action: str
 ) -> float | None:
-    """Extract a clean, sanity-checked execution price for a leg."""
+    """Extract realistic execution price taking actual Bid/Ask or Mid with slippage penalty."""
     if option_type.lower() == "put":
         bid, ask, mid = quote.put_bid, quote.put_ask, quote.put_mid
     else:
@@ -77,24 +80,81 @@ def _get_clean_exec_price(
     if mid is None or mid <= 0:
         return None
 
+    spread = (ask - bid) if (ask is not None and bid is not None and ask >= bid) else 0.1 * mid
+    slippage = 0.25 * spread
+
     if action.lower() == "buy":
-        if ask is not None and 0 < ask <= 2.5 * mid:
+        if ask is not None and ask > 0:
             return ask
-        return mid
+        return mid + slippage
     else:  # Sell
-        if bid is not None and bid >= 0.4 * mid:
+        if bid is not None and bid > 0:
             return bid
-        return mid
+        return max(0.01, mid - slippage)
+
+
+def compute_rnd_distribution(
+    chain: ParsedOptionChain,
+    spot_price: float,
+    implied_vol: float = 0.15,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute Risk-Neutral Density (RND) via Breeden-Litzenberger (2nd derivative of Call prices wrt Strike).
+
+    Returns:
+        Tuple of (strikes_grid, pdf_grid)
+    """
+    F = chain.synthetic_spot or spot_price
+    T = max(0.001, chain.days_to_expiration / 365.0)
+    std_dev = F * implied_vol * math.sqrt(T)
+
+    # Grid covering +/- 3.5 std dev around forward price
+    grid_min = max(100.0, F - 3.5 * std_dev)
+    grid_max = F + 3.5 * std_dev
+    grid = np.linspace(grid_min, grid_max, 200)
+    dK = grid[1] - grid[0]
+
+    # Attempt Breeden-Litzenberger from market Call quotes if at least 4 quotes exist
+    valid_quotes = sorted(
+        [q for q in chain.quotes if q.call_mid is not None and q.call_mid > 0],
+        key=lambda q: q.strike,
+    )
+
+    if len(valid_quotes) >= 4:
+        mkt_strikes = np.array([q.strike for q in valid_quotes])
+        mkt_calls = np.array([q.call_mid for q in valid_quotes])
+
+        # Interpolate call prices on fine grid
+        interp_calls = np.interp(grid, mkt_strikes, mkt_calls, left=np.nan, right=0.0)
+        
+        # Extrapolate outside market strikes using Black-76
+        left_mask = np.isnan(interp_calls)
+        if np.any(left_mask):
+            interp_calls[left_mask] = [bs_call_price(F, K, T, 0.0, implied_vol) for K in grid[left_mask]]
+
+        # Second numerical derivative
+        d2c = np.gradient(np.gradient(interp_calls, dK), dK)
+        pdf = np.maximum(0.0, d2c)
+        
+        total_prob = np.sum(pdf) * dK
+        if total_prob > 1e-6:
+            pdf /= total_prob
+            return grid, pdf
+
+    # Fallback to Lognormal / Normal RND around Forward F
+    pdf = (1.0 / (std_dev * math.sqrt(2.0 * math.pi))) * np.exp(-0.5 * ((grid - F) / std_dev) ** 2)
+    pdf /= (np.sum(pdf) * dK)
+    return grid, pdf
 
 
 def price_realtime_strategies(
     chain: ParsedOptionChain,
     spot_price: float,
     prob_rise: float = 0.50,
-    implied_vol: float = 0.10,
+    implied_vol: float = 0.15,
     contract_multiplier: float = 50.0,
+    fee_per_leg_nis: float = 2.5,
 ) -> list[RealtimeStrategyProposal]:
-    """Price candidate strategies on live option chain quotes."""
+    """Price candidate strategies on live option chain quotes with true RND-based POP and EV."""
     if not chain.quotes or spot_price <= 0:
         return []
 
@@ -105,7 +165,12 @@ def price_realtime_strategies(
         return []
 
     horizon = int(round(chain.days_to_expiration))
-    std_move = spot_price * implied_vol * math.sqrt(horizon / 252.0)
+    effective_spot = chain.synthetic_spot or spot_price
+    std_move = effective_spot * implied_vol * math.sqrt(horizon / 365.0)
+
+    # Compute RND PDF over strike grid
+    grid, pdf = compute_rnd_distribution(chain, spot_price=effective_spot, implied_vol=implied_vol)
+    dK = grid[1] - grid[0]
 
     def find_nearest_strike(target: float, available_strikes: list[float]) -> float:
         return min(available_strikes, key=lambda s: abs(s - target))
@@ -117,7 +182,7 @@ def price_realtime_strategies(
 
     # 1. Bull Put Spread
     if len(valid_puts) >= 2:
-        sp_k = find_nearest_strike(spot_price - 0.2 * std_move, valid_puts)
+        sp_k = find_nearest_strike(effective_spot - 0.2 * std_move, valid_puts)
         lp_candidates = [s for s in valid_puts if s < sp_k]
         if lp_candidates:
             lp_k = find_nearest_strike(sp_k - 0.6 * std_move, lp_candidates)
@@ -129,13 +194,16 @@ def price_realtime_strategies(
             if sp_price is not None and lp_price is not None:
                 net_credit = sp_price - lp_price
                 width = sp_k - lp_k
-                max_profit = net_credit
-                max_loss = width - net_credit
+                commissions_nis = 2 * fee_per_leg_nis
+                max_profit_nis = net_credit * contract_multiplier - commissions_nis
+                max_loss_nis = (width - net_credit) * contract_multiplier + commissions_nis
 
-                if max_loss > 0 and max_profit > 0:
+                if max_loss_nis > 0 and max_profit_nis > 0:
                     be = sp_k - net_credit
-                    pop = max(0.10, min(0.90, prob_rise + 0.12))
-                    ev_nis = (pop * max_profit - (1.0 - pop) * max_loss) * contract_multiplier
+                    # Calculate true POP & EV using RND PDF integration
+                    payoff_grid = np.maximum(-width, np.minimum(net_credit, grid - sp_k + net_credit)) * contract_multiplier - commissions_nis
+                    ev_nis = float(np.sum(payoff_grid * pdf) * dK)
+                    pop = float(np.sum(pdf[grid >= be]) * dK)
 
                     legs = (
                         RealtimeLeg("Sell", "Put", sp_k, sp_q.put_bid, sp_q.put_ask, sp_q.put_mid, sp_price, "Short Put (מכירת פוט)"),
@@ -148,21 +216,21 @@ def price_realtime_strategies(
                             horizon_days=horizon,
                             net_credit_debit=net_credit,
                             net_credit_debit_nis=net_credit * contract_multiplier,
-                            max_profit_nis=max_profit * contract_multiplier,
-                            max_loss_nis=max_loss * contract_multiplier,
-                            risk_reward_ratio=max_profit / max_loss,
+                            max_profit_nis=max_profit_nis,
+                            max_loss_nis=max_loss_nis,
+                            risk_reward_ratio=max_profit_nis / max_loss_nis,
                             breakeven_points=(be,),
                             probability_of_profit=pop,
                             expected_value_nis=ev_nis,
                             legs=legs,
                             rationale="איסוף פרמיה מעל קו תמיכה; מרוויח מעלייה, דשדוש או ירידה קלה מעל נקודת האיזון.",
-                            quality_label="ציטוט חי (מכפיל בורסה 50 ש״ח/נק')",
+                            quality_label="ציטוט חי (RND Breeden-Litzenberger)",
                         )
                     )
 
     # 2. Bear Call Spread
     if len(valid_calls) >= 2:
-        sc_k = find_nearest_strike(spot_price + 0.2 * std_move, valid_calls)
+        sc_k = find_nearest_strike(effective_spot + 0.2 * std_move, valid_calls)
         lc_candidates = [s for s in valid_calls if s > sc_k]
         if lc_candidates:
             lc_k = find_nearest_strike(sc_k + 0.6 * std_move, lc_candidates)
@@ -174,13 +242,15 @@ def price_realtime_strategies(
             if sc_price is not None and lc_price is not None:
                 net_credit = sc_price - lc_price
                 width = lc_k - sc_k
-                max_profit = net_credit
-                max_loss = width - net_credit
+                commissions_nis = 2 * fee_per_leg_nis
+                max_profit_nis = net_credit * contract_multiplier - commissions_nis
+                max_loss_nis = (width - net_credit) * contract_multiplier + commissions_nis
 
-                if max_loss > 0 and max_profit > 0:
+                if max_loss_nis > 0 and max_profit_nis > 0:
                     be = sc_k + net_credit
-                    pop = max(0.10, min(0.90, (1.0 - prob_rise) + 0.12))
-                    ev_nis = (pop * max_profit - (1.0 - pop) * max_loss) * contract_multiplier
+                    payoff_grid = np.maximum(-width, np.minimum(net_credit, sc_k + net_credit - grid)) * contract_multiplier - commissions_nis
+                    ev_nis = float(np.sum(payoff_grid * pdf) * dK)
+                    pop = float(np.sum(pdf[grid <= be]) * dK)
 
                     legs = (
                         RealtimeLeg("Sell", "Call", sc_k, sc_q.call_bid, sc_q.call_ask, sc_q.call_mid, sc_price, "Short Call (מכירת קול)"),
@@ -193,24 +263,24 @@ def price_realtime_strategies(
                             horizon_days=horizon,
                             net_credit_debit=net_credit,
                             net_credit_debit_nis=net_credit * contract_multiplier,
-                            max_profit_nis=max_profit * contract_multiplier,
-                            max_loss_nis=max_loss * contract_multiplier,
-                            risk_reward_ratio=max_profit / max_loss,
+                            max_profit_nis=max_profit_nis,
+                            max_loss_nis=max_loss_nis,
+                            risk_reward_ratio=max_profit_nis / max_loss_nis,
                             breakeven_points=(be,),
                             probability_of_profit=pop,
                             expected_value_nis=ev_nis,
                             legs=legs,
                             rationale="איסוף פרמיה מתחת לקו התנגדות; מרוויח מירידה או דשדוש מתחת לנקודת האיזון.",
-                            quality_label="ציטוט חי (מכפיל בורסה 50 ש״ח/נק')",
+                            quality_label="ציטוט חי (RND Breeden-Litzenberger)",
                         )
                     )
 
     # 3. Bull Call Spread
     if len(valid_calls) >= 2:
-        lc_k = find_nearest_strike(spot_price - 0.1 * std_move, valid_calls)
+        lc_k = find_nearest_strike(effective_spot - 0.1 * std_move, valid_calls)
         sc_candidates = [s for s in valid_calls if s > lc_k]
         if sc_candidates:
-            sc_k = find_nearest_strike(spot_price + 0.5 * std_move, sc_candidates)
+            sc_k = find_nearest_strike(effective_spot + 0.5 * std_move, sc_candidates)
             lc_q, sc_q = quote_map[lc_k], quote_map[sc_k]
 
             lc_price = _get_clean_exec_price(lc_q, "call", "buy")
@@ -219,13 +289,15 @@ def price_realtime_strategies(
             if lc_price is not None and sc_price is not None:
                 net_debit = lc_price - sc_price
                 width = sc_k - lc_k
-                max_profit = width - net_debit
-                max_loss = net_debit
+                commissions_nis = 2 * fee_per_leg_nis
+                max_profit_nis = (width - net_debit) * contract_multiplier - commissions_nis
+                max_loss_nis = net_debit * contract_multiplier + commissions_nis
 
-                if max_loss > 0 and max_profit > 0:
+                if max_loss_nis > 0 and max_profit_nis > 0:
                     be = lc_k + net_debit
-                    pop = max(0.10, min(0.85, prob_rise - 0.05))
-                    ev_nis = (pop * max_profit - (1.0 - pop) * max_loss) * contract_multiplier
+                    payoff_grid = np.maximum(-net_debit, np.minimum(width - net_debit, grid - lc_k - net_debit)) * contract_multiplier - commissions_nis
+                    ev_nis = float(np.sum(payoff_grid * pdf) * dK)
+                    pop = float(np.sum(pdf[grid >= be]) * dK)
 
                     legs = (
                         RealtimeLeg("Buy", "Call", lc_k, lc_q.call_bid, lc_q.call_ask, lc_q.call_mid, lc_price, "Long Call (קניית קול)"),
@@ -238,20 +310,20 @@ def price_realtime_strategies(
                             horizon_days=horizon,
                             net_credit_debit=-net_debit,
                             net_credit_debit_nis=-net_debit * contract_multiplier,
-                            max_profit_nis=max_profit * contract_multiplier,
-                            max_loss_nis=max_loss * contract_multiplier,
-                            risk_reward_ratio=max_profit / max_loss,
+                            max_profit_nis=max_profit_nis,
+                            max_loss_nis=max_loss_nis,
+                            risk_reward_ratio=max_profit_nis / max_loss_nis,
                             breakeven_points=(be,),
                             probability_of_profit=pop,
                             expected_value_nis=ev_nis,
                             legs=legs,
                             rationale="מינוף עליית המדד בסיכון מוגדר מראש ועלות נמוכה מקניית קול ישירה.",
-                            quality_label="ציטוט חי (מכפיל בורסה 50 ש״ח/נק')",
+                            quality_label="ציטוט חי (RND Breeden-Litzenberger)",
                         )
                     )
 
     # 4. Long Straddle
-    atm_k = find_nearest_strike(spot_price, strikes)
+    atm_k = find_nearest_strike(effective_spot, strikes)
     if atm_k in quote_map:
         atm_q = quote_map[atm_k]
         c_price = _get_clean_exec_price(atm_q, "call", "buy")
@@ -259,13 +331,15 @@ def price_realtime_strategies(
 
         if c_price is not None and p_price is not None:
             net_debit = c_price + p_price
+            commissions_nis = 2 * fee_per_leg_nis
             be_low = atm_k - net_debit
             be_high = atm_k + net_debit
-            max_loss = net_debit
+            max_loss_nis = net_debit * contract_multiplier + commissions_nis
 
-            pop = 0.42
-            max_profit = net_debit * 1.5
-            ev_nis = (pop * max_profit - (1.0 - pop) * max_loss) * contract_multiplier
+            payoff_grid = (np.abs(grid - atm_k) - net_debit) * contract_multiplier - commissions_nis
+            ev_nis = float(np.sum(payoff_grid * pdf) * dK)
+            pop = float(np.sum(pdf[(grid <= be_low) | (grid >= be_high)]) * dK)
+            max_profit_nis = float("inf")
 
             legs = (
                 RealtimeLeg("Buy", "Call", atm_k, atm_q.call_bid, atm_q.call_ask, atm_q.call_mid, c_price, "Long Call ATM"),
@@ -278,19 +352,20 @@ def price_realtime_strategies(
                     horizon_days=horizon,
                     net_credit_debit=-net_debit,
                     net_credit_debit_nis=-net_debit * contract_multiplier,
-                    max_profit_nis=float("inf"),
-                    max_loss_nis=max_loss * contract_multiplier,
+                    max_profit_nis=max_profit_nis,
+                    max_loss_nis=max_loss_nis,
                     risk_reward_ratio=2.0,
                     breakeven_points=(be_low, be_high),
                     probability_of_profit=pop,
                     expected_value_nis=ev_nis,
                     legs=legs,
                     rationale="מרוויח מתנועה חדה לכל כיוון (פריצת תנודתיות למעלה או למטה).",
-                    quality_label="ציטוט חי (מכפיל בורסה 50 ש״ח/נק')",
+                    quality_label="ציטוט חי (RND Breeden-Litzenberger)",
                 )
             )
 
-    proposals.sort(key=lambda p: p.expected_value_nis, reverse=True)
+    # Sort proposals by risk-adjusted Expected Value (EV / Max Loss ratio - Kelly style)
+    proposals.sort(key=lambda p: p.expected_value_nis / (p.max_loss_nis + 1.0) if p.max_loss_nis != float("inf") else p.expected_value_nis, reverse=True)
     return proposals
 
 
@@ -299,12 +374,9 @@ def price_calendar_time_spreads(
     monthly_chain: ParsedOptionChain | None,
     spot_price: float,
     contract_multiplier: float = 50.0,
+    fee_per_leg_nis: float = 2.5,
 ) -> list[CalendarSpreadProposal]:
-    """Scan and price inter-expiration Calendar Time Spreads (Weekly vs Monthly).
-
-    Evaluates selling short-term weekly options against buying long-term monthly options
-    at identical or diagonal strikes to exploit time decay differentials (Theta) and IV skew.
-    """
+    """Scan and price inter-expiration Calendar Time Spreads (Weekly vs Monthly)."""
     if not weekly_chain or not monthly_chain or spot_price <= 0:
         return []
 
@@ -320,24 +392,26 @@ def price_calendar_time_spreads(
     decay_ratio = math.sqrt(long_days / max(0.5, short_days))
 
     proposals: list[CalendarSpreadProposal] = []
-
-    # Focus on strikes within +/- 2.5% of spot price
     near_strikes = [s for s in common_strikes if abs(s - spot_price) / spot_price <= 0.03]
 
     for strike in near_strikes:
         wq, mq = w_map[strike], m_map[strike]
 
-        # 1. Calendar Call Spread (Sell Weekly Call, Buy Monthly Call)
+        # 1. Calendar Call Spread
         w_c_bid = _get_clean_exec_price(wq, "call", "sell")
         m_c_ask = _get_clean_exec_price(mq, "call", "buy")
 
         if w_c_bid is not None and m_c_ask is not None and m_c_ask > w_c_bid > 0:
             net_debit_pts = m_c_ask - w_c_bid
-            net_debit_nis = net_debit_pts * contract_multiplier
-            est_max_profit_nis = net_debit_nis * 1.8  # Max profit when spot closes at strike at short expiry
+            net_debit_nis = net_debit_pts * contract_multiplier + 2 * fee_per_leg_nis
+
+            # Reprice long leg at short expiration using Black-76
+            m_iv = mq.call_iv or 0.18
+            rem_time = max(0.001, (long_days - short_days) / 365.0)
+            repriced_long = bs_call_price(S=strike, K=strike, T=rem_time, r=0.0, sigma=m_iv)
+            est_max_profit_nis = max(0.0, (repriced_long * contract_multiplier) - net_debit_nis)
 
             w_iv = wq.call_iv or 0.15
-            m_iv = mq.call_iv or 0.18
             iv_diff = w_iv - m_iv
 
             legs = (
@@ -365,17 +439,20 @@ def price_calendar_time_spreads(
                 )
             )
 
-        # 2. Calendar Put Spread (Sell Weekly Put, Buy Monthly Put)
+        # 2. Calendar Put Spread
         w_p_bid = _get_clean_exec_price(wq, "put", "sell")
         m_p_ask = _get_clean_exec_price(mq, "put", "buy")
 
         if w_p_bid is not None and m_p_ask is not None and m_p_ask > w_p_bid > 0:
             net_debit_pts = m_p_ask - w_p_bid
-            net_debit_nis = net_debit_pts * contract_multiplier
-            est_max_profit_nis = net_debit_nis * 1.8
+            net_debit_nis = net_debit_pts * contract_multiplier + 2 * fee_per_leg_nis
+
+            m_iv = mq.put_iv or 0.18
+            rem_time = max(0.001, (long_days - short_days) / 365.0)
+            repriced_long = bs_put_price(S=strike, K=strike, T=rem_time, r=0.0, sigma=m_iv)
+            est_max_profit_nis = max(0.0, (repriced_long * contract_multiplier) - net_debit_nis)
 
             w_iv = wq.put_iv or 0.15
-            m_iv = mq.put_iv or 0.18
             iv_diff = w_iv - m_iv
 
             legs = (
@@ -403,6 +480,6 @@ def price_calendar_time_spreads(
                 )
             )
 
-    # Sort calendar proposals by lowest net debit relative to estimated max profit
-    proposals.sort(key=lambda p: p.net_debit_nis)
+    # Sort calendar proposals by highest ROI: (estimated_max_profit_nis - net_debit_nis) / net_debit_nis
+    proposals.sort(key=lambda p: (p.estimated_max_profit_nis - p.net_debit_nis) / max(1.0, p.net_debit_nis), reverse=True)
     return proposals

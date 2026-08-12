@@ -34,3 +34,27 @@ CREATE TABLE IF NOT EXISTS lite_metrics (
     PRIMARY KEY (run_id, metric_name, dimensions_json)
 );
 CREATE INDEX IF NOT EXISTS idx_lite_metrics_name_date ON lite_metrics(metric_name, as_of DESC);
+
+CREATE TABLE IF NOT EXISTS chain_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    source_file TEXT NOT NULL,
+    expiration_label TEXT NOT NULL,
+    days_to_expiration REAL NOT NULL,
+    synthetic_spot REAL,
+    strike REAL NOT NULL,
+    call_bid REAL,
+    call_ask REAL,
+    call_last REAL,
+    call_bid_size REAL,
+    call_ask_size REAL,
+    call_iv REAL,
+    put_bid REAL,
+    put_ask REAL,
+    put_last REAL,
+    put_bid_size REAL,
+    put_ask_size REAL,
+    put_iv REAL
+);
+CREATE INDEX IF NOT EXISTS idx_chain_snapshots_ts_exp ON chain_snapshots(timestamp DESC, expiration_label);
+

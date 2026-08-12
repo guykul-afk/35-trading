@@ -831,29 +831,47 @@ def _offset_detail(records: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _ridge_logit_predict(x: np.ndarray, y: np.ndarray, current: np.ndarray) -> float:
-    """Deterministic L2-shrunk logistic fit for the small EOD sample."""
+def _ridge_logit_predict(
+    x: np.ndarray, y: np.ndarray, current: np.ndarray, alpha: float = 1.0
+) -> float:
+    """IRLS/Newton solver for Ridge L2-regularized logistic regression on small EOD samples."""
 
     mean = np.mean(x, axis=0)
     scale = np.std(x, axis=0)
     scale[scale < 1e-8] = 1.0
     train = (x - mean) / scale
     point = (current - mean) / scale
-    design = np.column_stack((np.ones(len(train)), train))
-    beta = np.zeros(design.shape[1])
-    for _ in range(250):
+
+    n_samples, n_features = train.shape
+    design = np.column_stack((np.ones(n_samples), train))
+    beta = np.zeros(n_features + 1)
+    L = np.diag(np.r_[0.0, np.full(n_features, alpha)])
+
+    for _ in range(25):
         logits = np.clip(design @ beta, -20, 20)
-        probabilities = 1 / (1 + np.exp(-logits))
-        gradient = design.T @ (probabilities - y) / len(y)
-        gradient[1:] += 0.25 * beta[1:] / len(y)
-        beta -= 0.25 * gradient
-    return float(1 / (1 + math.exp(-float(np.clip(np.r_[1.0, point] @ beta, -20, 20)))))
+        p = 1.0 / (1.0 + np.exp(-logits))
+        w = p * (1.0 - p)
+        w = np.maximum(w, 1e-6)
+
+        grad = design.T @ (p - y) + L @ beta
+        H = (design.T * w) @ design + L
+
+        try:
+            step = np.linalg.solve(H, grad)
+        except np.linalg.LinAlgError:
+            step = np.linalg.lstsq(H, grad, rcond=None)[0]
+
+        beta -= step
+        if np.max(np.abs(step)) < 1e-5:
+            break
+
+    return float(1.0 / (1.0 + math.exp(-float(np.clip(np.r_[1.0, point] @ beta, -20, 20)))))
 
 
 def _probabilistic_family_model(
     frame: pd.DataFrame, horizons: tuple[int, ...]
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Purged, non-overlapping OOS model with one input per information family."""
+    """Purged, non-overlapping OOS model with separate trend and reversal family signals."""
 
     def expanding_rank(series: pd.Series) -> pd.Series:
         return series.expanding(min_periods=60).apply(
@@ -882,7 +900,8 @@ def _probabilistic_family_model(
             "rv_local": ranked[["downside_share_20", "rs_range_5_20", "rv_20_60_ratio"]].mean(axis=1),
             "iv_local": ranked[["vta35_zscore_60", "vta35_change_5d", "vta_vol_of_vol_20"]].mean(axis=1),
             "global_fx": ranked[["local_global_stress_spread", "vix_vix3m_ratio", "usdils_change_5d"]].mean(axis=1),
-            "price_regime": ranked[["trend_efficiency_20", "range_position_20", "reversal_5_vol_scaled"]].mean(axis=1),
+            "trend_regime": ranked[["trend_efficiency_20", "range_position_20"]].mean(axis=1),
+            "reversal_regime": ranked["reversal_5_vol_scaled"],
             "forecast_gap": ranked["matched_vrp_3d"],
         },
         index=frame.index,

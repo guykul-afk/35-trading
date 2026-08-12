@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable
-
+import math
 import numpy as np
 
 from .results import ScalarResult
@@ -13,10 +12,9 @@ from .results import ScalarResult
 def har_eod_forecast(
     prices: Iterable[float], *, horizon: int = 3, minimum_training: int = 80
 ) -> ScalarResult:
-    """Forecast annualized RV with a log-HAR proxy built from EOD returns.
+    """Forecast annualized RV with a log-HAR proxy with SHAR (semivariance) & HAR-Q adjustments.
 
-    The last ``horizon`` observations are never used as training targets, so
-    the latest estimate only uses outcomes that would already have matured.
+    Target is un-demeaned realized variance (sum of squared returns) over future horizon.
     """
 
     close = np.asarray(tuple(prices), dtype=float)
@@ -28,38 +26,55 @@ def har_eod_forecast(
         or horizon < 2
     ):
         return ScalarResult(None, quality_flags=("insufficient_har_history",))
+
     returns = np.diff(np.log(close))
-    daily = np.abs(returns) * math.sqrt(252)
+    # Un-demeaned realized variance proxy
+    daily_rv = returns**2 * 245.0
+    daily_vol = np.sqrt(np.maximum(1e-8, daily_rv))
+    downside_rv = np.minimum(returns, 0.0)**2 * 245.0
+    quarticity = (245.0 / 3.0) * (returns**4)
+
     rows: list[list[float]] = []
     targets: list[float] = []
-    # Feature position refers to the return ending at close[position + 1].
-    last_matured = len(daily) - horizon - 1
+    last_matured = len(returns) - horizon - 1
+
     for position in range(21, last_matured + 1):
         future = returns[position + 1 : position + horizon + 1]
         if len(future) < 2:
             continue
-        rows.append(
-            [
-                1.0,
-                math.log(max(daily[position], 1e-6)),
-                math.log(max(float(np.mean(daily[position - 4 : position + 1])), 1e-6)),
-                math.log(max(float(np.mean(daily[position - 21 : position + 1])), 1e-6)),
-            ]
-        )
-        targets.append(math.log(max(float(np.std(future, ddof=0) * math.sqrt(252)), 1e-6)))
+
+        # Realized Variance over future horizon (un-demeaned)
+        fut_var = float(np.sum(future**2) / len(future)) * 245.0
+        
+        # Features: Daily, Weekly, Monthly RV + Downside Semivariance (SHAR) + Quarticity (HAR-Q)
+        r_d = math.log(max(daily_rv[position], 1e-6))
+        r_w = math.log(max(float(np.mean(daily_rv[position - 4 : position + 1])), 1e-6))
+        r_m = math.log(max(float(np.mean(daily_rv[position - 21 : position + 1])), 1e-6))
+        r_down = math.log(max(float(np.mean(downside_rv[position - 4 : position + 1])), 1e-6))
+        rq = math.sqrt(max(float(np.mean(quarticity[position - 4 : position + 1])), 1e-6))
+
+        rows.append([1.0, r_d, r_w, r_m, r_down, rq])
+        targets.append(math.log(max(fut_var, 1e-6)))
+
     if len(rows) < minimum_training:
         return ScalarResult(None, quality_flags=("insufficient_har_training",))
+
     beta = np.linalg.lstsq(np.asarray(rows), np.asarray(targets), rcond=None)[0]
+    
     current = np.asarray(
         [
             1.0,
-            math.log(max(daily[-1], 1e-6)),
-            math.log(max(float(np.mean(daily[-5:])), 1e-6)),
-            math.log(max(float(np.mean(daily[-22:])), 1e-6)),
+            math.log(max(daily_rv[-1], 1e-6)),
+            math.log(max(float(np.mean(daily_rv[-5:])), 1e-6)),
+            math.log(max(float(np.mean(daily_rv[-22:])), 1e-6)),
+            math.log(max(float(np.mean(downside_rv[-5:])), 1e-6)),
+            math.sqrt(max(float(np.mean(quarticity[-5:])), 1e-6)),
         ]
     )
-    forecast = float(math.exp(float(current @ beta)))
-    return ScalarResult(min(2.0, max(0.01, forecast)))
+    
+    forecast_var = float(math.exp(float(current @ beta)))
+    forecast_vol = math.sqrt(max(1e-6, forecast_var))
+    return ScalarResult(min(2.0, max(0.01, forecast_vol)))
 
 
 def gjr_eod_forecast(
@@ -68,16 +83,44 @@ def gjr_eod_forecast(
     alpha: float = 0.06,
     gamma: float = 0.08,
     beta: float = 0.86,
+    optimize_params: bool = True,
 ) -> ScalarResult:
-    """Fixed-parameter GJR-style EOD benchmark with a leverage term."""
+    """GJR-GARCH EOD forecast with parameter optimization via QMLE on expanding window."""
 
     values = np.asarray(tuple(returns), dtype=float)
     if values.ndim != 1 or len(values) < 30 or np.any(~np.isfinite(values)):
         return ScalarResult(None, quality_flags=("insufficient_gjr_history",))
-    if min(alpha, gamma, beta) < 0 or alpha + gamma / 2 + beta >= 1:
+
+    # Grid search optimization for QMLE parameters if requested
+    if optimize_params and len(values) >= 100:
+        best_nll = float("inf")
+        best_params = (alpha, gamma, beta)
+        
+        # Coarse grid search for stable stationary GJR-GARCH parameters
+        for a_c in [0.03, 0.06, 0.09]:
+            for g_c in [0.04, 0.08, 0.12]:
+                for b_c in [0.80, 0.85, 0.90]:
+                    if a_c + g_c / 2.0 + b_c < 0.99:
+                        uncond = float(np.var(values, ddof=0))
+                        om = uncond * (1.0 - a_c - g_c / 2.0 - b_c)
+                        v_t = uncond
+                        nll = 0.0
+                        for res in values:
+                            v_t = om + a_c * res**2 + g_c * (res**2) * (res < 0) + b_c * v_t
+                            if v_t <= 0:
+                                nll = float("inf")
+                                break
+                            nll += math.log(v_t) + (res**2) / v_t
+                        if nll < best_nll:
+                            best_nll = nll
+                            best_params = (a_c, g_c, b_c)
+        alpha, gamma, beta = best_params
+
+    if min(alpha, gamma, beta) < 0 or alpha + gamma / 2.0 + beta >= 1.0:
         return ScalarResult(None, quality_flags=("invalid_gjr_parameters",))
+
     unconditional = float(np.var(values, ddof=0))
-    omega = unconditional * (1 - alpha - gamma / 2 - beta)
+    omega = unconditional * (1.0 - alpha - gamma / 2.0 - beta)
     variance = unconditional
     for residual in values:
         variance = (
@@ -86,12 +129,13 @@ def gjr_eod_forecast(
             + gamma * residual**2 * (residual < 0)
             + beta * variance
         )
-    return ScalarResult(math.sqrt(max(variance, 0.0) * 252))
+    return ScalarResult(math.sqrt(max(variance, 0.0) * 245.0))
 
 
 def variance_risk_premium(
     implied_volatility_decimal: float, physical_forecast_decimal: float
 ) -> ScalarResult:
+    """Calculate VRP strictly in Variance Space (IV^2 - RV^2)."""
     if (
         not math.isfinite(implied_volatility_decimal)
         or not math.isfinite(physical_forecast_decimal)
@@ -114,3 +158,4 @@ def qlike(actual_variance: np.ndarray, forecast_variance: np.ndarray) -> float:
         return math.nan
     ratio = actual_variance[valid] / forecast_variance[valid]
     return float(np.mean(ratio - np.log(ratio) - 1))
+

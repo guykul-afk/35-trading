@@ -55,7 +55,7 @@ def bs_implied_volatility(
     K: float,
     T: float,
     option_type: str = "call",
-    r: float = 0.04,
+    r: float = 0.0,
 ) -> float | None:
     """Solve Black-Scholes implied volatility using bisection."""
     intrinsic = max(0.0, S - K) if option_type.lower() == "call" else max(0.0, K - S)
@@ -80,24 +80,25 @@ def bs_implied_volatility(
 def extract_atm_implied_volatility(
     chain: ParsedOptionChain,
     spot_price: float,
-    r: float = 0.04,
+    r: float = 0.0,
 ) -> float | None:
     """Extract ATM implied volatility from a parsed option chain."""
-    if not chain.quotes or spot_price <= 0:
+    effective_spot = chain.synthetic_spot if chain.synthetic_spot is not None else spot_price
+    if not chain.quotes or effective_spot <= 0:
         return None
 
     T = max(0.001, chain.days_to_expiration / 365.0)
-    sorted_quotes = sorted(chain.quotes, key=lambda q: abs(q.strike - spot_price))
+    sorted_quotes = sorted(chain.quotes, key=lambda q: abs(q.strike - effective_spot))
     
     ivs: list[float] = []
     for q in sorted_quotes[:3]:
         if q.call_mid is not None:
-            c_iv = bs_implied_volatility(q.call_mid, spot_price, q.strike, T, "call", r)
+            c_iv = bs_implied_volatility(q.call_mid, effective_spot, q.strike, T, "call", r)
             if c_iv is not None:
                 ivs.append(c_iv)
 
         if q.put_mid is not None:
-            p_iv = bs_implied_volatility(q.put_mid, spot_price, q.strike, T, "put", r)
+            p_iv = bs_implied_volatility(q.put_mid, effective_spot, q.strike, T, "put", r)
             if p_iv is not None:
                 ivs.append(p_iv)
 
@@ -166,7 +167,7 @@ def calculate_term_structure_expectations(
             var_h = var1 + (var2 - var1) * (T_h - t1) / (t2 - t1)
             iv_h = math.sqrt(max(0.0001, var_h / T_h))
 
-        one_sigma = spot_price * iv_h * math.sqrt(h / 252.0)
+        one_sigma = spot_price * iv_h * math.sqrt(h / 365.0)
         two_sigma = 2.0 * one_sigma
 
         results[h] = HorizonExpectation(

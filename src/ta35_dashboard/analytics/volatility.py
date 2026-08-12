@@ -264,10 +264,37 @@ def trend_efficiency(prices: Iterable[float], *, window: int = 20) -> ScalarResu
     return ScalarResult(float(np.sum(returns) / path) if path else 0.0)
 
 
+def garman_klass_volatility(
+    opens: Iterable[float],
+    highs: Iterable[float],
+    lows: Iterable[float],
+    closes: Iterable[float],
+    *,
+    periods_per_year: float = 245.0,
+) -> ScalarResult:
+    """Garman-Klass OHLC realized volatility estimator (more efficient than Parkinson/close-to-close)."""
+    o, h, low, c = (_array(values, 3) for values in (opens, highs, lows, closes))
+    if any(value is None for value in (o, h, low, c)):
+        return ScalarResult(None, quality_flags=("insufficient_ohlc_history",))
+    assert o is not None and h is not None and low is not None and c is not None
+    if (
+        len({len(o), len(h), len(low), len(c)}) != 1
+        or np.any(low <= 0)
+        or np.any(h < low)
+    ):
+        return ScalarResult(None, quality_flags=("invalid_garman_klass_input",))
+
+    log_hl = np.log(h / low)
+    log_co = np.log(c / o)
+    daily_var = 0.5 * (log_hl ** 2) - (2.0 * math.log(2) - 1.0) * (log_co ** 2)
+    variance = float(np.mean(daily_var))
+    return ScalarResult(math.sqrt(max(variance, 0.0) * periods_per_year))
+
+
 def volatility_scaled_reversal(
     prices: Iterable[float], realized_volatility_decimal: float, *, window: int = 5
 ) -> ScalarResult:
-    """Negative short return scaled by its expected move under current RV."""
+    """Negative short return scaled by its expected move under prior RV (excluding current window)."""
 
     values = _array(prices, window + 1)
     if (
@@ -279,5 +306,6 @@ def volatility_scaled_reversal(
         return ScalarResult(None, quality_flags=("invalid_reversal_input",))
     return ScalarResult(
         -float(np.log(values[-1] / values[-window - 1]))
-        / (realized_volatility_decimal * math.sqrt(window / 252))
+        / (realized_volatility_decimal * math.sqrt(window / 245.0))
     )
+

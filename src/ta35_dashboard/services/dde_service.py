@@ -1,30 +1,7 @@
-"""DDE Options Chain Service.
+import logging
+from ta35_dashboard.storage.repository import SQLiteRepository
 
-Scans project directories for live updating DDE option chain files, computes term structure
-implied volatility across 1/3/7/14 days, and generates real-time option strategy and calendar spread proposals.
-"""
-
-from __future__ import annotations
-
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
-import re
-import tempfile
-from typing import Sequence, Any
-
-from ta35_dashboard.analytics.implied_vol import (
-    HorizonExpectation,
-    calculate_term_structure_expectations,
-)
-from ta35_dashboard.analytics.realtime_strategies import (
-    CalendarSpreadProposal,
-    RealtimeStrategyProposal,
-    price_calendar_time_spreads,
-    price_realtime_strategies,
-)
-from ta35_dashboard.config import PROJECT_ROOT
-from ta35_dashboard.connectors.dde_parser import ParsedOptionChain, parse_tase_dde_file
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +34,7 @@ def analyze_dde_options_data(
     uploaded_files: Sequence[Any] | None = None,
     spot_override: float | None = None,
     prob_rise: float = 0.50,
+    db_path: str | Path | None = None,
 ) -> DDEAnalysisResult:
     """Scan and analyze DDE options chain files from project root or user uploads."""
     root_path = Path(project_root)
@@ -75,8 +53,8 @@ def analyze_dde_options_data(
                         content = uf.getvalue().decode(enc)
                         if "מחיר מימוש" in content or "מימוש" in content:
                             break
-                    except Exception:
-                        pass
+                    except Exception as err:
+                        logger.debug("Encoding %s failed for %s: %s", enc, uf.name, err)
                 
                 if content:
                     with tempfile.NamedTemporaryFile("w", encoding="utf-16", delete=False, suffix=".txt") as tmp:
@@ -86,8 +64,8 @@ def analyze_dde_options_data(
                     chain = parse_tase_dde_file(tmp_path, expiration_label="auto")
                     raw_chains.append((datetime.now().timestamp(), uf.name, chain))
                     latest_mtime = max(latest_mtime, datetime.now().timestamp())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error("Failed parsing uploaded file %s: %s", getattr(uf, 'name', 'unknown'), e)
 
     # 2. Scan project root and downloads/data directories
     candidate_paths = []
@@ -107,11 +85,10 @@ def analyze_dde_options_data(
                     mtime = p.stat().st_mtime
                     raw_chains.append((mtime, p.name, chain))
                     latest_mtime = max(latest_mtime, mtime)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Error parsing candidate DDE file %s: %s", p.name, e)
 
     # 3. Deduplicate based on base filename (stripping '_live' suffix)
-    # This ensures that for each source workbook, we only keep the newest exported CSV file (usually the _live version)
     dedup_map: dict[str, tuple[float, str, ParsedOptionChain]] = {}
     
     for mtime, name, chain in raw_chains:
@@ -133,11 +110,10 @@ def analyze_dde_options_data(
     parsed_chains = [item[2] for item in unique_chains]
 
     # Sort chains by their ATM Option Value (which corresponds to time value / days to expiration)
-    temp_spot = spot_override or 4150.0
+    temp_spot = 4150.0
     parsed_chains.sort(key=lambda c: calculate_atm_premium_sum(c, temp_spot))
 
     # 4. Map days to expiration and labels dynamically based on sorted ATM premium order
-    # Handles 1, 2, 3, or more chains gracefully
     final_chains: list[ParsedOptionChain] = []
     num_chains = len(parsed_chains)
     
@@ -161,7 +137,6 @@ def analyze_dde_options_data(
                 days = max_days
                 label = "חודשית (Monthly)"
             else:
-                # Interpolate days based on index
                 days = min_days + (max_days - min_days) * (idx / (num_chains - 1))
                 days = float(round(days))
                 label = f"שבועית {idx + 1} (Weekly)"
@@ -179,14 +154,24 @@ def analyze_dde_options_data(
         weekly_chain = final_chains[0]
         monthly_chain = final_chains[-1]
 
-    # 5. Determine spot price
+    # 5. Determine spot price (Live synthetic spot takes precedence over static spot override)
     synth_spot = None
     for c in final_chains:
         if c.synthetic_spot:
             synth_spot = c.synthetic_spot
             break
 
-    spot_price = spot_override or synth_spot or 4145.35
+    spot_price = synth_spot or spot_override or 4145.35
+
+    # 5b. Persist parsed option chains to SQLite
+    try:
+        repo_path = db_path or (root_path / "data" / "ta35_dashboard.db")
+        repo = SQLiteRepository(repo_path)
+        for (mtime, s_name, _), f_chain in zip(unique_chains, final_chains):
+            repo.insert_chain_snapshots(f_chain, source_file=s_name)
+    except Exception as e:
+        logger.error("Failed saving chain snapshots to SQLite DB: %s", e)
+
 
     # Re-sort final chains in case their days_to_expiration changed
     final_chains.sort(key=lambda c: c.days_to_expiration)

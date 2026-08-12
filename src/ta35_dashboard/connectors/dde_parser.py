@@ -31,15 +31,15 @@ class OptionQuote:
 
     @property
     def call_mid(self) -> float | None:
-        if self.call_bid is not None and self.call_ask is not None and self.call_bid > 0 and self.call_ask > 0:
+        if self.call_bid is not None and self.call_ask is not None:
             return (self.call_bid + self.call_ask) / 2.0
-        return self.call_last or self.call_bid or self.call_ask
+        return self.call_last if self.call_last is not None else (self.call_bid if self.call_bid is not None else self.call_ask)
 
     @property
     def put_mid(self) -> float | None:
-        if self.put_bid is not None and self.put_ask is not None and self.put_bid > 0 and self.put_ask > 0:
+        if self.put_bid is not None and self.put_ask is not None:
             return (self.put_bid + self.put_ask) / 2.0
-        return self.put_last or self.put_bid or self.put_ask
+        return self.put_last if self.put_last is not None else (self.put_bid if self.put_bid is not None else self.put_ask)
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,7 +137,7 @@ def parse_tase_dde_file(
 
     lines = [line.split(separator) for line in content.splitlines() if line.strip()]
 
-    if not lines:
+    if not lines or len(lines) < 2:
         return ParsedOptionChain(
             expiration_label=expiration_label,
             days_to_expiration=days_to_expiration,
@@ -145,14 +145,61 @@ def parse_tase_dde_file(
             quotes=(),
         )
 
+    header = lines[0]
+    
+    # Find strike index
+    try:
+        strike_idx = next(i for i, h in enumerate(header) if "מחיר מימוש" in h or "מימוש" in h)
+    except StopIteration:
+        strike_idx = 17 # fallback
+        
+    def find_col(name: str, side: str) -> int:
+        for i, h in enumerate(header):
+            if name in h:
+                if side == "put" and i < strike_idx:
+                    return i
+                elif side == "call" and i > strike_idx:
+                    return i
+        return -1
+        
+    col_map = {
+        "put_bid_sz": find_col("כ.ביקוש", "put"),
+        "put_bid": find_col("ביקוש", "put"),
+        "put_last": find_col("שער אחרון", "put"),
+        "put_ask": find_col("היצע", "put"),
+        "put_ask_sz": find_col("כ.היצע", "put"),
+        "put_iv": find_col("גלום", "put"),
+        "call_iv": find_col("גלום", "call"),
+        "call_ask_sz": find_col("כ.היצע", "call"),
+        "call_ask": find_col("היצע", "call"),
+        "call_last": find_col("שער אחרון", "call"),
+        "call_bid": find_col("ביקוש", "call"),
+        "call_bid_sz": find_col("כ.ביקוש", "call"),
+    }
+    
+    # Fallback to known indices if headers are missing
+    if col_map["put_bid"] == -1: col_map["put_bid"] = 11
+    if col_map["put_ask"] == -1: col_map["put_ask"] = 13
+    if col_map["put_last"] == -1: col_map["put_last"] = 12
+    if col_map["put_bid_sz"] == -1: col_map["put_bid_sz"] = 10
+    if col_map["put_ask_sz"] == -1: col_map["put_ask_sz"] = 14
+    if col_map["put_iv"] == -1: col_map["put_iv"] = 16
+
+    if col_map["call_bid"] == -1: col_map["call_bid"] = 23
+    if col_map["call_ask"] == -1: col_map["call_ask"] = 21
+    if col_map["call_last"] == -1: col_map["call_last"] = 22
+    if col_map["call_bid_sz"] == -1: col_map["call_bid_sz"] = 24
+    if col_map["call_ask_sz"] == -1: col_map["call_ask_sz"] = 20
+    if col_map["call_iv"] == -1: col_map["call_iv"] = 18
+
     records: list[OptionQuote] = []
     synthetic_spots: list[float] = []
 
     for line in lines[1:]:
-        if len(line) <= 17:
+        if len(line) <= strike_idx:
             continue
 
-        strike_raw = line[17].strip()
+        strike_raw = line[strike_idx].strip()
         try:
             # Handle float values like '4120.0' from Excel COM
             strike = float(strike_raw)
@@ -161,39 +208,39 @@ def parse_tase_dde_file(
         except ValueError:
             continue
 
-        def _val(idx: int) -> float | None:
-            if idx < len(line):
+        def _val(idx: int, is_price: bool = True) -> float | None:
+            if idx >= 0 and idx < len(line):
                 v = line[idx].strip().replace(",", "")
-                if v and v != "0":
+                if v:
                     try:
-                        res = float(v) / scale_factor
-                        return res if res > 0 else None
+                        res = float(v)
+                        if is_price:
+                            res /= scale_factor
+                        return res
                     except ValueError:
-                        return None
+                        pass
             return None
 
-        # Left side of Strike (Col 10-16) is PUT
-        put_bid = _val(11)
-        put_ask = _val(13)
-        put_last = _val(12)
-        put_bid_sz = _val(10)
-        put_ask_sz = _val(14)
-        put_iv = _val(16)
+        put_bid = _val(col_map["put_bid"], is_price=True)
+        put_ask = _val(col_map["put_ask"], is_price=True)
+        put_last = _val(col_map["put_last"], is_price=True)
+        put_bid_sz = _val(col_map["put_bid_sz"], is_price=False)
+        put_ask_sz = _val(col_map["put_ask_sz"], is_price=False)
+        put_iv = _val(col_map["put_iv"], is_price=False)
 
-        # Right side of Strike (Col 18-24) is CALL
-        call_bid = _val(23)
-        call_ask = _val(21)
-        call_last = _val(22)
-        call_ask_sz = _val(20)
-        call_bid_sz = _val(24)
-        call_iv = _val(18)
+        call_bid = _val(col_map["call_bid"], is_price=True)
+        call_ask = _val(col_map["call_ask"], is_price=True)
+        call_last = _val(col_map["call_last"], is_price=True)
+        call_ask_sz = _val(col_map["call_ask_sz"], is_price=False)
+        call_bid_sz = _val(col_map["call_bid_sz"], is_price=False)
+        call_iv = _val(col_map["call_iv"], is_price=False)
 
-        call_mid = (call_bid + call_ask) / 2.0 if (call_bid and call_ask) else call_last
-        put_mid = (put_bid + put_ask) / 2.0 if (put_bid and put_ask) else put_last
+        call_mid = (call_bid + call_ask) / 2.0 if (call_bid is not None and call_ask is not None) else call_last
+        put_mid = (put_bid + put_ask) / 2.0 if (put_bid is not None and put_ask is not None) else put_last
 
         if call_mid is not None and put_mid is not None:
             synth = strike + call_mid - put_mid
-            if 3000 <= synth <= 6000:
+            if synth > 1000:
                 synthetic_spots.append(synth)
 
         records.append(
