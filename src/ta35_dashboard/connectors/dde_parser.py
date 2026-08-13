@@ -16,6 +16,8 @@ import pandas as pd
 @dataclass(frozen=True, slots=True)
 class OptionQuote:
     strike: float
+    call_contract_id: str | None
+    put_contract_id: str | None
     call_bid: float | None
     call_ask: float | None
     call_last: float | None
@@ -48,6 +50,7 @@ class ParsedOptionChain:
     days_to_expiration: float
     synthetic_spot: float | None
     quotes: tuple[OptionQuote, ...]
+    content_hash: str | None = None
 
     @property
     def quotes_with_prices(self) -> int:
@@ -58,6 +61,8 @@ class ParsedOptionChain:
         for q in self.quotes:
             records.append({
                 "strike": q.strike,
+                "call_contract_id": q.call_contract_id,
+                "put_contract_id": q.put_contract_id,
                 "call_bid": q.call_bid,
                 "call_ask": q.call_ask,
                 "call_last": q.call_last,
@@ -147,6 +152,7 @@ def parse_tase_dde_file(
             days_to_expiration=days_to_expiration,
             synthetic_spot=None,
             quotes=(),
+            content_hash=None,
         )
 
     header = lines[0]
@@ -166,19 +172,21 @@ def parse_tase_dde_file(
                     return i
         return -1
         
-    col_map = {
         "put_bid_sz": find_col("כ.ביקוש", "put"),
         "put_bid": find_col("ביקוש", "put"),
         "put_last": find_col("שער אחרון", "put"),
         "put_ask": find_col("היצע", "put"),
         "put_ask_sz": find_col("כ.היצע", "put"),
         "put_iv": find_col("גלום", "put"),
+        "put_contract_id": find_col("מספר נייר", "put") if find_col("מספר נייר", "put") != -1 else find_col("מספר", "put"),
         "call_iv": find_col("גלום", "call"),
         "call_ask_sz": find_col("כ.היצע", "call"),
         "call_ask": find_col("היצע", "call"),
         "call_last": find_col("שער אחרון", "call"),
         "call_bid": find_col("ביקוש", "call"),
         "call_bid_sz": find_col("כ.ביקוש", "call"),
+        "call_contract_id": find_col("מספר נייר", "call") if find_col("מספר נייר", "call") != -1 else find_col("מספר", "call"),
+        "expiry": find_col("פקיעה", "put") if find_col("פקיעה", "put") != -1 else (find_col("פקיעה", "call") if find_col("פקיעה", "call") != -1 else find_col("תאריך", "put")),
     }
     
     # Fallback to known indices if headers are missing
@@ -225,12 +233,22 @@ def parse_tase_dde_file(
                         pass
             return None
 
+        def _str_val(idx: int) -> str | None:
+            if idx >= 0 and idx < len(line):
+                v = line[idx].strip()
+                if v:
+                    return v
+            return None
+
         put_bid = _val(col_map["put_bid"], is_price=True)
         put_ask = _val(col_map["put_ask"], is_price=True)
         put_last = _val(col_map["put_last"], is_price=True)
         put_bid_sz = _val(col_map["put_bid_sz"], is_price=False)
         put_ask_sz = _val(col_map["put_ask_sz"], is_price=False)
         put_iv = _val(col_map["put_iv"], is_price=False)
+        if put_iv is not None:
+            put_iv /= 100.0
+        put_contract_id = _str_val(col_map.get("put_contract_id", -1))
 
         call_bid = _val(col_map["call_bid"], is_price=True)
         call_ask = _val(col_map["call_ask"], is_price=True)
@@ -238,6 +256,14 @@ def parse_tase_dde_file(
         call_ask_sz = _val(col_map["call_ask_sz"], is_price=False)
         call_bid_sz = _val(col_map["call_bid_sz"], is_price=False)
         call_iv = _val(col_map["call_iv"], is_price=False)
+        if call_iv is not None:
+            call_iv /= 100.0
+        call_contract_id = _str_val(col_map.get("call_contract_id", -1))
+
+        expiry_val = _str_val(col_map.get("expiry", -1))
+        if expiry_val and expiration_label == "auto":
+            # Override guessed expiration label if we found a real expiry date in the row
+            expiration_label = expiry_val
 
         call_mid = (call_bid + call_ask) / 2.0 if (call_bid is not None and call_ask is not None) else call_last
         put_mid = (put_bid + put_ask) / 2.0 if (put_bid is not None and put_ask is not None) else put_last
@@ -250,6 +276,8 @@ def parse_tase_dde_file(
         records.append(
             OptionQuote(
                 strike=strike,
+                call_contract_id=call_contract_id,
+                put_contract_id=put_contract_id,
                 call_bid=call_bid,
                 call_ask=call_ask,
                 call_last=call_last,
@@ -267,9 +295,13 @@ def parse_tase_dde_file(
 
     median_synth = float(np.median(synthetic_spots)) if synthetic_spots else None
 
+    import hashlib
+    content_hash = hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest() if content else None
+
     return ParsedOptionChain(
         expiration_label=expiration_label,
         days_to_expiration=days_to_expiration,
         synthetic_spot=median_synth,
         quotes=tuple(records),
+        content_hash=content_hash,
     )
