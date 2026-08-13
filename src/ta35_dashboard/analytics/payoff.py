@@ -8,6 +8,9 @@ from typing import Any
 import numpy as np
 
 
+from ..config import TRADING_DAYS_PER_YEAR
+
+
 def generate_strategy_payoff_data(
     spot: float,
     forecast_volatility: float,
@@ -19,7 +22,7 @@ def generate_strategy_payoff_data(
     if spot <= 0 or forecast_volatility <= 0 or horizon_days <= 0:
         return {"index_levels": [], "payoff": [], "pdf_scaled": [], "spot": spot, "one_sigma": 0, "legs": legs}
 
-    one_sigma = spot * forecast_volatility * math.sqrt(horizon_days / 252.0)
+    one_sigma = spot * forecast_volatility * math.sqrt(horizon_days / TRADING_DAYS_PER_YEAR)
     sigma_bound = max(3.0 * one_sigma, spot * 0.10)
 
     min_price = max(10.0, spot - sigma_bound)

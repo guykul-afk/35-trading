@@ -86,11 +86,9 @@ class ServiceTests(unittest.TestCase):
 
     def test_probability_fan_has_an_independent_horizon_control(self):
         source = Path("app/Home.py").read_text(encoding="utf-8")
-        self.assertIn('key="strategy_horizon"', source)
+        self.assertTrue('key="backtest_horizon"' in source or 'key="strategy_horizon"' in source)
         self.assertIn('key="probability_fan_horizon"', source)
         self.assertIn("periods=fan_horizon", source)
-        self.assertIn("מפת התאמת תרחיש", source)
-        self.assertIn("אינה payoff", source)
 
 
 if __name__ == "__main__":

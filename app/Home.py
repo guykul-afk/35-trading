@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sqlite3
 import time
 
@@ -12,6 +13,7 @@ from decision_ui import render_decision_hero
 from ta35_dashboard.analytics import probability_band, recommend_strategy
 from ta35_dashboard.analytics.payoff import build_plotly_payoff_chart, generate_strategy_payoff_data
 from ta35_dashboard.config import PROJECT_ROOT, SETTINGS
+from ta35_dashboard.decision_engine import StrategyRecommendation, TradeTicket
 from ta35_dashboard.decision_engine.engine import run_trade_decision_engine
 from ta35_dashboard.services import import_tase_uploads
 from ta35_dashboard.services.dde_service import analyze_dde_options_data
@@ -652,14 +654,28 @@ with tab_research:
             for column, card in zip(
                 columns, selected_cards[start : start + 4], strict=False
             ):
+                card_label = card.label
+                card_val = card.value
+
+                if card.key == "forecast_rv_3d":
+                    card_label = f"תחזית RV ל־{strength_horizon} ימים"
+                elif card.key == "expected_move_3d_points":
+                    card_label = f"טווח {strength_horizon} ימים"
+                    if last_close_val is not None and data.forecast_volatility is not None:
+                        card_val = last_close_val * data.forecast_volatility * math.sqrt(strength_horizon / 252.0)
+                elif card.key == "har_rv_3d":
+                    card_label = f"HAR-EOD ל־{strength_horizon} ימים"
+                elif card.key == "matched_vrp_3d":
+                    card_label = f"VRP מותאם ({strength_horizon} ימים)"
+
                 display = (
-                    "לא זמין" if card.value is None else format(card.value, card.format)
+                    "לא זמין" if card_val is None else format(card_val, card.format)
                 )
                 vol_result = data.backtest.indicator(
                     card.key, strength_horizon, "volatility", card.volatility_arrow
                 )
                 column.metric(
-                    card.label,
+                    card_label,
                     display,
                     help=(
                         f"{card.help}\n\n**פירוש הסימול:** {card.signal_note}\n\n"
@@ -782,9 +798,19 @@ with tab_research:
             market_result = report.indicator(
                 card.key, tested_horizon, "market", card.market_arrow
             )
+            card_label = card.label
+            if card.key == "forecast_rv_3d":
+                card_label = f"תחזית RV ל־{tested_horizon} ימים"
+            elif card.key == "expected_move_3d_points":
+                card_label = f"טווח {tested_horizon} ימים"
+            elif card.key == "har_rv_3d":
+                card_label = f"HAR-EOD ל־{tested_horizon} ימים"
+            elif card.key == "matched_vrp_3d":
+                card_label = f"VRP מותאם ({tested_horizon} ימים)"
+
             indicator_rows.append(
                 {
-                    "אינדיקטור": card.label,
+                    "אינדיקטור": card_label,
                     "חץ תנודתיות": card.volatility_arrow,
                     "דיוק תנודתיות": (
                         f"{vol_result.hit_rate:.1%}"

@@ -11,6 +11,9 @@ class Settings:
     stale_after_days: int = 3
     model_version: str = "1.5.0"
     repository_url: str = "https://github.com/guykul-afk/35-trading"
+    trading_days_per_year: float = 245.0
 
 
 SETTINGS = Settings()
+TRADING_DAYS_PER_YEAR = SETTINGS.trading_days_per_year
+

@@ -7,6 +7,7 @@ from collections.abc import Iterable
 
 import numpy as np
 
+from ..config import TRADING_DAYS_PER_YEAR
 from .results import ScalarResult
 
 
@@ -22,7 +23,7 @@ def expected_move(
     annualized_volatility: float,
     horizon_days: float,
     *,
-    days_per_year: float = 252.0,
+    days_per_year: float = TRADING_DAYS_PER_YEAR,
 ) -> ScalarResult:
     if not all(
         math.isfinite(value)
@@ -47,7 +48,7 @@ def probability_band(
     horizon_days: float,
     standard_deviations: float,
     *,
-    days_per_year: float = 252.0,
+    days_per_year: float = TRADING_DAYS_PER_YEAR,
 ) -> tuple[float, float] | None:
     """Symmetric normal-return range around ``level`` for a trading horizon."""
 
@@ -66,7 +67,7 @@ def probability_band(
 
 
 def realized_volatility(
-    prices: Iterable[float], *, periods_per_year: float = 252.0
+    prices: Iterable[float], *, periods_per_year: float = TRADING_DAYS_PER_YEAR
 ) -> ScalarResult:
     values = _array(prices, 3)
     if values is None or periods_per_year <= 0:
@@ -84,7 +85,7 @@ def ewma_volatility_forecast(
     returns: Iterable[float],
     *,
     decay: float = 0.94,
-    periods_per_year: float = 252.0,
+    periods_per_year: float = TRADING_DAYS_PER_YEAR,
     initial_variance: float | None = None,
 ) -> ScalarResult:
     values = _array(returns, 2)
@@ -101,7 +102,7 @@ def ewma_volatility_forecast(
 
 
 def parkinson_volatility(
-    highs: Iterable[float], lows: Iterable[float], *, periods_per_year: float = 252.0
+    highs: Iterable[float], lows: Iterable[float], *, periods_per_year: float = TRADING_DAYS_PER_YEAR
 ) -> ScalarResult:
     high, low = _array(highs, 2), _array(lows, 2)
     if (
@@ -122,7 +123,7 @@ def yang_zhang_volatility(
     lows: Iterable[float],
     closes: Iterable[float],
     *,
-    periods_per_year: float = 252.0,
+    periods_per_year: float = TRADING_DAYS_PER_YEAR,
 ) -> ScalarResult:
     o, h, low, c = (_array(values, 3) for values in (opens, highs, lows, closes))
     if any(value is None for value in (o, h, low, c)):
@@ -270,7 +271,7 @@ def garman_klass_volatility(
     lows: Iterable[float],
     closes: Iterable[float],
     *,
-    periods_per_year: float = 245.0,
+    periods_per_year: float = TRADING_DAYS_PER_YEAR,
 ) -> ScalarResult:
     """Garman-Klass OHLC realized volatility estimator (more efficient than Parkinson/close-to-close)."""
     o, h, low, c = (_array(values, 3) for values in (opens, highs, lows, closes))
@@ -306,6 +307,7 @@ def volatility_scaled_reversal(
         return ScalarResult(None, quality_flags=("invalid_reversal_input",))
     return ScalarResult(
         -float(np.log(values[-1] / values[-window - 1]))
-        / (realized_volatility_decimal * math.sqrt(window / 245.0))
+        / (realized_volatility_decimal * math.sqrt(window / TRADING_DAYS_PER_YEAR))
     )
+
 
