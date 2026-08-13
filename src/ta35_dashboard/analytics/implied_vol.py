@@ -87,8 +87,20 @@ def extract_atm_implied_volatility(
     if not chain.quotes or effective_spot <= 0:
         return None
 
-    T = max(0.001, chain.days_to_expiration / 365.0)
     sorted_quotes = sorted(chain.quotes, key=lambda q: abs(q.strike - effective_spot))
+    
+    # Prioritize native IVs from DDE if available (convert from % to decimal)
+    native_ivs: list[float] = []
+    for q in sorted_quotes[:3]:
+        if q.call_iv is not None and q.call_iv > 0:
+            native_ivs.append(q.call_iv / 100.0)
+        if q.put_iv is not None and q.put_iv > 0:
+            native_ivs.append(q.put_iv / 100.0)
+            
+    if native_ivs:
+        return float(np.median(native_ivs))
+
+    T = max(0.001, chain.days_to_expiration / 365.0)
     
     ivs: list[float] = []
     for q in sorted_quotes[:3]:

@@ -57,46 +57,22 @@ def calculate_atm_premium_sum(chain: ParsedOptionChain, spot_price: float) -> fl
 
 def analyze_dde_options_data(
     project_root: str | Path = PROJECT_ROOT,
-    uploaded_files: Sequence[Any] | None = None,
     spot_override: float | None = None,
     prob_rise: float = 0.50,
     db_path: str | Path | None = None,
 ) -> DDEAnalysisResult:
-    """Scan and analyze DDE options chain files from project root or user uploads."""
+    """Scan and analyze DDE options chain files from project root or DDE folders."""
     root_path = Path(project_root)
     source_files: list[str] = []
     latest_mtime: float = 0.0
 
     raw_chains: list[tuple[float, str, ParsedOptionChain]] = []
 
-    # 1. Handle uploaded files if provided
-    if uploaded_files:
-        for uf in uploaded_files:
-            try:
-                content = None
-                for enc in ["utf-16", "utf-8", "cp1255"]:
-                    try:
-                        content = uf.getvalue().decode(enc)
-                        if "מחיר מימוש" in content or "מימוש" in content:
-                            break
-                    except Exception as err:
-                        logger.debug("Encoding %s failed for %s: %s", enc, uf.name, err)
-                
-                if content:
-                    with tempfile.NamedTemporaryFile("w", encoding="utf-16", delete=False, suffix=".txt") as tmp:
-                        tmp.write(content)
-                        tmp_path = Path(tmp.name)
-
-                    chain = parse_tase_dde_file(tmp_path, expiration_label="auto")
-                    raw_chains.append((datetime.now().timestamp(), uf.name, chain))
-                    latest_mtime = max(latest_mtime, datetime.now().timestamp())
-            except Exception as e:
-                logger.error("Failed parsing uploaded file %s: %s", getattr(uf, 'name', 'unknown'), e)
-
-    # 2. Scan project root and downloads/data directories
+    # 1. Scan project root, DDE, downloads, and data directories
     candidate_paths = []
     for ext in ["*.txt", "*.csv", "*.tsv"]:
         candidate_paths.extend(root_path.glob(ext))
+        candidate_paths.extend((root_path / "DDE").glob(ext))
         candidate_paths.extend((root_path / "downloads").glob(ext))
         candidate_paths.extend((root_path / "data").glob(ext))
 
@@ -152,20 +128,16 @@ def analyze_dde_options_data(
             quotes=c.quotes
         ))
     elif num_chains >= 2:
-        min_days = 2.0
-        max_days = 16.0
-        
         for idx, c in enumerate(parsed_chains):
             if idx == 0:
-                days = min_days
-                label = "שבועית 1 (Weekly)" if num_chains > 2 else "שבועית (Weekly)"
+                days = 2.0
+                label = "פקיעה קרובה"
             elif idx == num_chains - 1:
-                days = max_days
-                label = "חודשית (Monthly)"
+                days = 16.0
+                label = "פקיעה רחוקה"
             else:
-                days = min_days + (max_days - min_days) * (idx / (num_chains - 1))
-                days = float(round(days))
-                label = f"שבועית {idx + 1} (Weekly)"
+                days = 7.0
+                label = "פקיעה בינונית"
                 
             final_chains.append(ParsedOptionChain(
                 expiration_label=label,
@@ -243,11 +215,17 @@ def analyze_dde_options_data(
         contract_multiplier=50.0,
     )
 
+    total_valid_quotes = sum(c.quotes_with_prices for c in final_chains)
+
     if not source_files:
         status_msg = "לא נמצאו קבצי DDE בתיקייה. ניתן להעלות קבצים או לשמור קבצי DDE בתיקיית הפרויקט."
         last_mod_str = "לא זמין"
+    elif total_valid_quotes == 0:
+        status_msg = f"⚠️ זוהו {len(source_files)} קבצי DDE בתיקייה, אך כל עמודות המחירים (ביקוש/היצע/שער אחרון) ריקות! ודא שחיבור ה-DDE בתוכנת המסחר פעיל בעת היצוא."
+        last_mod_dt = datetime.fromtimestamp(latest_mtime)
+        last_mod_str = last_mod_dt.strftime("%H:%M:%S (%d/%m/%Y)")
     else:
-        status_msg = f"פוענחו בהצלחה {len(source_files)} קבצי DDE מתעדכנים ({', '.join(set(source_files))})."
+        status_msg = f"פוענחו בהצלחה {len(source_files)} קבצי DDE מתעדכנים ({', '.join(set(source_files))}) עם {total_valid_quotes} ציטוטים פעילים."
         last_mod_dt = datetime.fromtimestamp(latest_mtime)
         last_mod_str = last_mod_dt.strftime("%H:%M:%S (%d/%m/%Y)")
 

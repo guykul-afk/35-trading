@@ -406,12 +406,14 @@ def price_calendar_time_spreads(
             net_debit_nis = net_debit_pts * contract_multiplier + 2 * fee_per_leg_nis
 
             # Reprice long leg at short expiration using Black-76
-            m_iv = mq.call_iv or 0.18
+            m_iv_raw = mq.call_iv or 0.18
+            m_iv = (m_iv_raw / 100.0) if m_iv_raw > 1.0 else m_iv_raw
             rem_time = max(0.001, (long_days - short_days) / 365.0)
             repriced_long = bs_call_price(S=strike, K=strike, T=rem_time, r=0.0, sigma=m_iv)
             est_max_profit_nis = max(0.0, (repriced_long * contract_multiplier) - net_debit_nis)
 
-            w_iv = wq.call_iv or 0.15
+            w_iv_raw = wq.call_iv or 0.15
+            w_iv = (w_iv_raw / 100.0) if w_iv_raw > 1.0 else w_iv_raw
             iv_diff = w_iv - m_iv
 
             legs = (
@@ -447,12 +449,14 @@ def price_calendar_time_spreads(
             net_debit_pts = m_p_ask - w_p_bid
             net_debit_nis = net_debit_pts * contract_multiplier + 2 * fee_per_leg_nis
 
-            m_iv = mq.put_iv or 0.18
+            m_iv_raw = mq.put_iv or 0.18
+            m_iv = (m_iv_raw / 100.0) if m_iv_raw > 1.0 else m_iv_raw
             rem_time = max(0.001, (long_days - short_days) / 365.0)
             repriced_long = bs_put_price(S=strike, K=strike, T=rem_time, r=0.0, sigma=m_iv)
             est_max_profit_nis = max(0.0, (repriced_long * contract_multiplier) - net_debit_nis)
 
-            w_iv = wq.put_iv or 0.15
+            w_iv_raw = wq.put_iv or 0.15
+            w_iv = (w_iv_raw / 100.0) if w_iv_raw > 1.0 else w_iv_raw
             iv_diff = w_iv - m_iv
 
             legs = (

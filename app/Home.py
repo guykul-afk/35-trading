@@ -32,8 +32,22 @@ latest_prob_init, prob_confidence = predict_live_direction(horizon_days=7)
 
 last_close_val_init = float(data.ta35_closes[-1]) if data.ta35_closes else 4150.0
 
+# Handle DDE uploads BEFORE analysis to ensure disk consistency
+uploaded_dde = st.session_state.get("dde_file_uploader")
+if uploaded_dde:
+    upload_sig = "_".join(getattr(uf, 'file_id', '') for uf in uploaded_dde)
+    if st.session_state.get("last_processed_upload_sig") != upload_sig:
+        dde_dir = PROJECT_ROOT / "DDE"
+        dde_dir.mkdir(exist_ok=True)
+        for uf in uploaded_dde:
+            try:
+                with open(dde_dir / uf.name, "wb") as f_out:
+                    f_out.write(uf.getvalue())
+            except Exception:
+                pass
+        st.session_state["last_processed_upload_sig"] = upload_sig
+
 dde_result = analyze_dde_options_data(
-    uploaded_files=st.session_state.get("dde_file_uploader"),
     spot_override=last_close_val_init,
     prob_rise=latest_prob_init,
 )
@@ -49,6 +63,31 @@ decision_result = run_trade_decision_engine(
     market_state=data.regime_matrix.market_state,
     parsed_chains=dde_result.chains if dde_result and dde_result.chains else None,
 )
+
+st.markdown(
+    """
+    <style>
+    /* Prevent Streamlit graying out / translucent fade during rerun */
+    .stApp [data-testid="stMainBlockContainer"],
+    .stApp [data-testid="stAppViewBlockContainer"],
+    div[class*="st-emotion-cache"] {
+        opacity: 1 !important;
+        filter: none !important;
+        transition: opacity 0s !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Compute fingerprint/signature of new decision result
+new_sig = f"{type(decision_result).__name__}_{getattr(decision_result, 'verdict', 'NONE')}_{getattr(decision_result, 'strategy_family', getattr(decision_result, 'primary_strategy_family', 'NONE'))}_{getattr(decision_result, 'opportunity_score', 0.0):.1f}_{getattr(decision_result, 'limit_price', 0.0):.1f}"
+
+if "active_displayed_signature" not in st.session_state:
+    st.session_state["active_displayed_signature"] = new_sig
+    st.session_state["displayed_decision_result"] = decision_result
+
+has_new_recommendation = (new_sig != st.session_state["active_displayed_signature"])
 
 page_header("מנוע החלטת מסחר ת״א־35 — Trade Decision Engine", data)
 
@@ -67,7 +106,42 @@ tab_trade, tab_track, tab_market, tab_research, tab_data = st.tabs(
 # TAB 1: THE TRADE — מנוע החלטת המסחר
 # -----------------------------------------------------------------------------
 with tab_trade:
-    render_decision_hero(decision_result, spot_price=last_close_val_init)
+    # background prediction & indicator bar
+    if dde_result and dde_result.chains:
+        synth = dde_result.synthetic_spot
+        synth_diff = (synth - last_close_val_init) if synth else 0.0
+        active_q = sum(c.quotes_with_prices for c in dde_result.chains)
+        tot_q = sum(len(c.quotes) for c in dde_result.chains)
+        
+        b1, b2, b3 = st.columns(3)
+        b1.metric(
+            "חוזה סינטטי גלום (Synthetics)",
+            f"{synth:,.1f}" if synth else "—",
+            delta=f"{synth_diff:+.1f} נק'",
+            help="מחושב מציטוטי האופציות בלייב לפי שוויון Put-Call Parity: F = K + C_mid - P_mid (עבור סטרייק ATM). מייצג את המחיר העתידי הסינטטי של המדד שמשוקלל על ידי השוק ללא ארביטראז'.",
+        )
+        b2.metric(
+            "איכות ציטוטי DDE (בלייב)",
+            f"{active_q} / {tot_q} פעילים",
+            delta="100% כיסוי" if active_q == tot_q else "חלקם חסרים",
+            help="סך הציטוטים הפעילים עם מחירי קנייה/מכירה מתוך סך הסטרייקים בשלושת השרשראות שנלכדו.",
+        )
+        b3.metric("סטטוס מנוע חיזוי", "⚡ רץ ברקע (15s)", delta="מעודכן", help="המנוע מעדכן נתונים ואינדיקטורים ברקע כל 15 שניות ללא הקפאת הממשק.")
+        st.markdown("---")
+
+    if has_new_recommendation:
+        st.info("🔔 **זוהתה המלצת מסחר חדשה לאור ציטוטי DDE שנלכדו ברקע!**")
+        col_btn1, col_btn2 = st.columns([1.2, 2.8])
+        with col_btn1:
+            if st.button("🔄 עדכן והצג המלצה חדשה", type="primary", key="btn_apply_new_trade"):
+                st.session_state["active_displayed_signature"] = new_sig
+                st.session_state["displayed_decision_result"] = decision_result
+                st.rerun()
+        with col_btn2:
+            st.caption("התצוגה שומרת על הטרייד הקיים יציב. לחץ על הכפתור כדי לטעון את ההמלצה החדשה.")
+        st.markdown("---")
+
+    render_decision_hero(st.session_state["displayed_decision_result"], spot_price=last_close_val_init)
 
 # -----------------------------------------------------------------------------
 # TAB 2: TRACKING — מעקב
@@ -256,6 +330,76 @@ with tab_market:
 
     st.markdown("---")
 
+    # 2b. גרף עקומת תנודתיות IV לפי פקיעות הקבצים ומדד קונטנגו (Contango / Backwardation)
+    st.subheader("📊 עקומת תנודתיות משתמעת (IV Term Structure) לפי פקיעות קבצי ה-DDE")
+    st.caption("ניתוח IV משתמעת גלומה (ATM Implied Volatility) ישירות מקבצי ה-DDE שנטענו והתאמה מדויקת לפקיעות הקיימות בקבצים.")
+
+    if dde_result and dde_result.chains:
+        from ta35_dashboard.analytics.implied_vol import extract_atm_implied_volatility
+
+        chain_labels = []
+        chain_ivs = []
+
+        for c in dde_result.chains:
+            raw_iv = extract_atm_implied_volatility(c, dde_result.spot_price)
+            if raw_iv is None or raw_iv <= 0:
+                raw_iv = 0.15
+            chain_labels.append(c.expiration_label)
+            chain_ivs.append(raw_iv * 100.0)
+
+        iv_w1 = chain_ivs[0] if len(chain_ivs) > 0 else 15.0
+        iv_m = chain_ivs[-1] if len(chain_ivs) > 0 else 15.0
+        contango_ratio = (iv_m / iv_w1) if iv_w1 > 0 else 1.0
+
+        if contango_ratio > 1.03:
+            term_status = "קונטנגו (Contango)"
+            term_desc = "תנודתיות לפקיעה רחוקה גבוהה מקרובה (מצב רגיל ורגוע בשוק)"
+            term_delta = f"+{(contango_ratio-1)*100:.1f}%"
+            delta_col = "normal"
+        elif contango_ratio < 0.97:
+            term_status = "בקוורדיישן (Backwardation)"
+            term_desc = "תנודתיות לפקיעה קרובה גבוהה מרחוקה (לחץ/אירוע מפתע בטווח הקצר)"
+            term_delta = f"-{(1-contango_ratio)*100:.1f}%"
+            delta_col = "inverse"
+        else:
+            term_status = "עקומה שטוחה (Flat)"
+            term_desc = "תנודתיות אחידה לרוחב כל אופקי הפקיעה"
+            term_delta = "0.0%"
+            delta_col = "off"
+
+        tc1, tc2, tc3 = st.columns(3)
+        tc1.metric("מבנה עקומת תנודתיות (Term Structure)", term_status, delta=term_delta, delta_color=delta_col, help=term_desc)
+        tc2.metric("יחס IV חודשי/שבועי", f"{contango_ratio:.2f}x", help="יחס IV בין פקיעה חודשית לפקיעה שבועית קרובה מקבצי ה-DDE (>1.0 = Contango)")
+        tc3.metric(f"IV פקיעה קרובה ({chain_labels[0]})", f"{iv_w1:.1f}%", help="תנודתיות משתמעת גלומה בפקיעה הקרובה ביותר שנלכדה בקבצי ה-DDE")
+
+        # Plotly term structure curve directly from DDE chains
+        fig_iv = go.Figure()
+        fig_iv.add_trace(
+            go.Scatter(
+                x=chain_labels,
+                y=chain_ivs,
+                mode="lines+markers+text",
+                name="IV משתמעת מקבצי DDE (%)",
+                text=[f"{v:.2f}%" for v in chain_ivs],
+                textposition="top center",
+                line={"color": "#00d4b1", "width": 3},
+                marker={"size": 12, "color": "#00ffd0"},
+                hovertemplate="פקיעת DDE: %{x}<br>תנודתיות גלומה ATM (IV): %{y:.2f}%<extra></extra>",
+            )
+        )
+        fig_iv.update_layout(
+            height=340,
+            margin={"l": 10, "r": 10, "t": 30, "b": 10},
+            xaxis_title="פקיעות אופציות (מתוך קבצי ה-DDE שנטענו)",
+            yaxis_title="תנודתיות גלומה ATM (IV %)",
+            yaxis={"range": [max(0.0, min(chain_ivs) - 2.0), max(chain_ivs) + 3.0]},
+        )
+        st.plotly_chart(fig_iv, width="stretch")
+    else:
+        st.info("אין נתוני DDE זמינים להצגת עקומת ה-IV ומדדי הקונטנגו.")
+
+    st.markdown("---")
+
     # 3. המלצת אסטרטגיה מרכזית (Single Source of Truth מתוך Trade Decision Engine)
     st.subheader("💡 המלצת אסטרטגיה כללית (מנוע ההחלטה המרכזי)")
 
@@ -341,166 +485,108 @@ with tab_market:
             st.info("אין נתונים מספיקים לגזירת מפת סטרייקים מוצעת.")
 
     st.markdown("---")
+    st.subheader("⚡ אנליזת אופציות DDE ואסטרטגיות רגליים בלייב")
 
-    # 4. נתוני אופציות DDE בזמן אמת, צפי 1/3/7/14 ימים והמלצות אסטרטגיה
-    st.subheader("⚡ נתוני אופציות DDE בזמן אמת — צפי 1 / 3 / 7 / 14 ימים והמלצות בלייב")
+    col_dde1, col_dde2 = st.columns([1.2, 0.8])
+    with col_dde1:
+        st.markdown("##### 📈 צפי תנודתיות משתמעת וטווחים (IV Term Structure)")
+        exp_table = []
+        for h, exp in dde_result.expectations.items():
+            exp_table.append({
+                "אופק צפי": f"{h} ימי מסחר",
+                "תנודתיות משתמעת (IV)": f"{exp.implied_volatility:.2%}",
+                "תנודה צפויה (±1σ)": f"±{exp.one_sigma_move:.1f} נק'",
+                "טווח מדד צפוי (68%)": f"{exp.lower_1s:,.0f} – {exp.upper_1s:,.0f}",
+                "טווח מדד רחב (95%)": f"{exp.lower_2s:,.0f} – {exp.upper_2s:,.0f}",
+            })
+        st.dataframe(pd.DataFrame(exp_table), hide_index=True, width="stretch")
 
-    col_up, col_ref = st.columns([1.5, 1.0])
-    with col_up:
-        uploaded_dde = st.file_uploader(
-            "העלאת קבצי DDE/אופציות מעודכנים (UTF-16LE / TSV)",
-            type=["txt", "csv", "tsv"],
-            accept_multiple_files=True,
-            help="ניתן להעלות קבצים מעודכנים או לשמור קבצי DDE בתיקיית הפרויקט. המערכת מזהה אותם אוטומטית.",
-            key="dde_file_uploader",
-        )
-    with col_ref:
-        st.markdown("<br>", unsafe_allow_html=True)
-        auto_refresh = st.checkbox("🔄 רענון אוטומטי בלייב (כל 30 שניות)", value=False, key="dde_auto_refresh")
-
-    # Track active scan time
-    current_time_str = time.strftime("%H:%M:%S")
-    st.session_state["last_scan_time"] = current_time_str
-
-    # dde_result is already computed globally at the top of the script
-
-    # Detect if file changed since last script run
-    if "prev_mtime" not in st.session_state:
-        st.session_state["prev_mtime"] = dde_result.last_modified_str
-        st.session_state["update_count"] = 0
-    elif st.session_state["prev_mtime"] != dde_result.last_modified_str:
-        st.session_state["prev_mtime"] = dde_result.last_modified_str
-        st.session_state["update_count"] += 1
-        st.toast(f"🔔 קובץ DDE עודכן! (עדכון מס' {st.session_state['update_count']})")
-
-    if dde_result.source_files:
-        # Check if file has changed in the last 1 minute
-        import datetime as dt_module
-        is_recent = False
-        try:
-            mtime_part = dde_result.last_modified_str.split()[0]
-            m_h, m_m, m_s = map(int, mtime_part.split(':'))
-            now_dt = dt_module.datetime.now()
-            file_dt = now_dt.replace(hour=m_h, minute=m_m, second=m_s)
-            time_diff = (now_dt - file_dt).total_seconds()
-            if time_diff < 0:
-                time_diff += 86400
-            is_recent = time_diff < 30
-        except Exception:
-            pass
-
-        if is_recent:
-            st.success(f"🟢 **הסורק פעיל:** הנתונים השתנו ועודכנו בהצלחה! · **עדכון אחרון בקובץ:** {dde_result.last_modified_str} · **סריקה אחרונה:** {current_time_str}")
-        else:
-            st.warning(f"🟡 **הסורק פעיל ומחפש שינויים...** · **סריקה אחרונה:** {current_time_str} · קובץ ה-DDE בדיסק לא השתנה מאז **{dde_result.last_modified_str}** · ⚪ לא זוהה שינוי בנתונים בסריקה האחרונה (הנתונים זהים לציטוט הקודם).")
-
-        col_dde1, col_dde2 = st.columns([1.2, 0.8])
-        with col_dde1:
-            st.markdown("##### 📈 צפי תנודתיות משתמעת וטווחים (IV Term Structure)")
-            exp_table = []
-            for h, exp in dde_result.expectations.items():
-                exp_table.append({
-                    "אופק צפי": f"{h} ימי מסחר",
-                    "תנודתיות משתמעת (IV)": f"{exp.implied_volatility:.2%}",
-                    "תנודה צפויה (±1σ)": f"±{exp.one_sigma_move:.1f} נק'",
-                    "טווח מדד צפוי (68%)": f"{exp.lower_1s:,.0f} – {exp.upper_1s:,.0f}",
-                    "טווח מדד רחב (95%)": f"{exp.lower_2s:,.0f} – {exp.upper_2s:,.0f}",
-                })
-            st.dataframe(pd.DataFrame(exp_table), hide_index=True, width="stretch")
-
-        with col_dde2:
-            st.markdown("##### 🎯 נתוני אופציות גלומים")
-            st.metric("מחיר מדד/נכס בסיס בשימוש", f"{dde_result.spot_price:,.1f}")
-            if dde_result.synthetic_spot:
-                st.metric("חוזה סינטטי גלום (Synthetics)", f"{dde_result.synthetic_spot:,.1f}")
-            
-            st.markdown("##### 📅 פקיעות פעילות שזוהו:")
-            for chain in dde_result.chains:
-                st.caption(f"· **{chain.expiration_label}** — {chain.days_to_expiration:.1f} ימים לפקיעה ({len(chain.quotes)} סטרייקים)")
-
-        st.markdown("##### 💡 הצעות אסטרטגיה בזמן אמת (תמחור ציטוטי שוק חים - Bid/Ask)")
-        if dde_result.realtime_proposals:
-            for prop in dde_result.realtime_proposals:
-                with st.expander(f"📌 {prop.strategy_name} — תוחלת רווח: {prop.expected_value_nis:+.0f} ש״ח", expanded=True):
-                    pcol1, pcol2, pcol3, pcol4 = st.columns(4)
-                    pcol1.metric("זיכוי/חיוב נטו", f"{prop.net_credit_debit_nis:+.0f} ש״ח", help="חיובי = זיכוי נטו (Net Credit), שלילי = חיוב נטו (Net Debit)")
-                    pcol2.metric("רווח מרבי", f"{prop.max_profit_nis:,.0f} ש״ח" if prop.max_profit_nis != float('inf') else "בלתי מוגבל")
-                    pcol3.metric("הפסד מרבי", f"{prop.max_loss_nis:,.0f} ש״ח")
-                    pcol4.metric("סיכוי הצלחה (PoP)", f"{prop.probability_of_profit:.1%}")
-
-                    st.write(f"**הסבר:** {prop.rationale}")
-                    st.caption(f"נקודות איזון (Breakeven): {', '.join([f'{be:,.1f}' for be in prop.breakeven_points])} נקודות | סטטוס: {prop.quality_label}")
-
-                    st.markdown("**פירוט רגלי העסקה בזמן אמת:**")
-                    leg_data = []
-                    for leg in prop.legs:
-                        leg_data.append({
-                            "פעולה": "קנייה (Buy)" if leg.action == "Buy" else "מכירה (Sell)",
-                            "סוג": leg.option_type,
-                            "מחיר מימוש": leg.strike,
-                            "מחיר ביצוע (ש״ח)": f"{leg.exec_price * 100:,.0f} ש״ח",
-                            "מחיר בנקודות": f"{leg.exec_price:.2f} נק'",
-                            "תיאור רגל": leg.label,
-                        })
-                    st.dataframe(pd.DataFrame(leg_data), hide_index=True, width="stretch")
-        if dde_result.calendar_proposals:
-            with st.expander("⏳ אסטרטגיות מרווחי זמן בין פקיעות (Calendar Spreads & Time Skew Arbitrage)", expanded=True):
-                st.caption("בדיקת תמחור מרווחי זמן בזמן אמת: מכירת אופציה שבועית לפקיעה קרובה כנגד קניית אופציה חודשית בסטרייק זהה לניצול שחיקת זמן מואצת (Theta Decay) והפרשי תנודתיות גלומה (IV Skew).")
-                cal_rows = []
-                for cal in dde_result.calendar_proposals[:8]:
-                    cal_rows.append({
-                        "אסטרטגיה": cal.strategy_name,
-                        "סטרייק": f"{cal.strike:,.0f}",
-                        "סוג אופציה": cal.option_type,
-                        "עלות נטו (ש״ח)": f"{cal.net_debit_nis:,.0f} ש״ח",
-                        "עלות בנקודות": f"{cal.net_debit_pts:.2f} נק'",
-                        "רווח מרבי משוער (ש״ח)": f"{cal.estimated_max_profit_nis:,.0f} ש״ח",
-                        "יתרון שחיקת זמן (Theta)": f"{cal.time_decay_ratio:.1f}x",
-                        "נימוק תמחור בלייב": cal.rationale,
-                    })
-                st.dataframe(pd.DataFrame(cal_rows), hide_index=True, width="stretch")
-        else:
-            st.info("לא נמצאו מרווחי זמן זמינים בין הפקיעות השונות בנתוני ה-DDE.")
-            
-        st.markdown("---")
-        st.subheader("⚖️ ארביטראז' תנודתיות (Volatility Arbitrage) מול ציפיות מודל")
-        st.caption("השוואה בין עלות אוכף/פרפר בפועל (Bid/Ask ביצועי) לבין תוחלת התנודתיות המשוקללת של המערכת, לאיתור תמחור חסר/יתר בשוק.")
+    with col_dde2:
+        st.markdown("##### 🎯 נתוני אופציות גלומים")
+        st.metric("מחיר מדד/נכס בסיס בשימוש", f"{dde_result.spot_price:,.1f}")
+        if dde_result.synthetic_spot:
+            st.metric("חוזה סינטטי גלום (Synthetics)", f"{dde_result.synthetic_spot:,.1f}")
         
-        if dde_result.chains and data.forecast_volatility:
-            from ta35_dashboard.analytics.realtime_strategies import analyze_volatility_arbitrage
-            
-            all_vol_proposals = []
-            for c in dde_result.chains:
-                proposals = analyze_volatility_arbitrage(
-                    chain=c,
-                    spot_price=dde_result.spot_price,
-                    expected_vol=data.forecast_volatility,
-                )
-                all_vol_proposals.extend(proposals)
-                
-            if all_vol_proposals:
-                vol_rows = []
-                for vp in all_vol_proposals:
-                    vol_rows.append({
-                        "אסטרטגיה (סטרייקים)": vp.strategy_name,
-                        "ימים לפקיעה": f"{vp.expiration_days:.0f} ימים",
-                        "מחיר ביצוע (שוק)": f"{vp.market_price_pts:.2f} נק'",
-                        "מחיר הוגן (מודל)": f"{vp.theoretical_price_pts:.2f} נק'",
-                        "פער (Edge)": f"{vp.gap_pct:+.1%}",
-                        "המלצה": "🟢 Buy (זול)" if vp.recommendation == "Buy" else "🔴 Sell (יקר)"
-                    })
-                st.dataframe(pd.DataFrame(vol_rows), hide_index=True, width="stretch")
-            else:
-                st.info("לא אותרו פערי ארביטראז' משמעותיים (>5%) מול תנודתיות המודל.")
-        else:
-            st.info("חסרים נתוני שרשראות אופציות או תחזית תנודתיות לביצוע אנליזת Vol-Arb.")
-            
-    else:
-        st.info(dde_result.status_message)
+        st.markdown("##### 📅 פקיעות פעילות שזוהו:")
+        for chain in dde_result.chains:
+            st.caption(f"· **{chain.expiration_label}** — {chain.days_to_expiration:.1f} ימים לפקיעה ({len(chain.quotes)} סטרייקים)")
 
-    if auto_refresh:
-        time.sleep(30)
-        st.rerun()
+    st.markdown("##### 💡 הצעות אסטרטגיה בזמן אמת (תמחור ציטוטי שוק חים - Bid/Ask)")
+    if dde_result.realtime_proposals:
+        for prop in dde_result.realtime_proposals:
+            with st.expander(f"📌 {prop.strategy_name} — תוחלת רווח: {prop.expected_value_nis:+.0f} ש״ח", expanded=True):
+                pcol1, pcol2, pcol3, pcol4 = st.columns(4)
+                pcol1.metric("זיכוי/חיוב נטו", f"{prop.net_credit_debit_nis:+.0f} ש״ח", help="חיובי = זיכוי נטו (Net Credit), שלילי = חיוב נטו (Net Debit)")
+                pcol2.metric("רווח מרבי", f"{prop.max_profit_nis:,.0f} ש״ח" if prop.max_profit_nis != float('inf') else "בלתי מוגבל")
+                pcol3.metric("הפסד מרבי", f"{prop.max_loss_nis:,.0f} ש״ח")
+                pcol4.metric("סיכוי הצלחה (PoP)", f"{prop.probability_of_profit:.1%}")
+
+                st.write(f"**הסבר:** {prop.rationale}")
+                st.caption(f"נקודות איזון (Breakeven): {', '.join([f'{be:,.1f}' for be in prop.breakeven_points])} נקודות | סטטוס: {prop.quality_label}")
+
+                st.markdown("**פירוט רגלי העסקה בזמן אמת:**")
+                leg_data = []
+                for leg in prop.legs:
+                    leg_data.append({
+                        "פעולה": "קנייה (Buy)" if leg.action == "Buy" else "מכירה (Sell)",
+                        "סוג": leg.option_type,
+                        "מחיר מימוש": leg.strike,
+                        "מחיר ביצוע (ש״ח)": f"{leg.exec_price * 100:,.0f} ש״ח",
+                        "מחיר בנקודות": f"{leg.exec_price:.2f} נק'",
+                        "תיאור רגל": leg.label,
+                    })
+                st.dataframe(pd.DataFrame(leg_data), hide_index=True, width="stretch")
+    if dde_result.calendar_proposals:
+        with st.expander("⏳ אסטרטגיות מרווחי זמן בין פקיעות (Calendar Spreads & Time Skew Arbitrage)", expanded=True):
+            st.caption("בדיקת תמחור מרווחי זמן בזמן אמת: מכירת אופציה שבועית לפקיעה קרובה כנגד קניית אופציה חודשית בסטרייק זהה לניצול שחיקת זמן מואצת (Theta Decay) והפרשי תנודתיות גלומה (IV Skew).")
+            cal_rows = []
+            for cal in dde_result.calendar_proposals[:8]:
+                cal_rows.append({
+                    "אסטרטגיה": cal.strategy_name,
+                    "סטרייק": f"{cal.strike:,.0f}",
+                    "סוג אופציה": cal.option_type,
+                    "עלות נטו (ש״ח)": f"{cal.net_debit_nis:,.0f} ש״ח",
+                    "עלות בנקודות": f"{cal.net_debit_pts:.2f} נק'",
+                    "רווח מרבי משוער (ש״ח)": f"{cal.estimated_max_profit_nis:,.0f} ש״ח",
+                    "יתרון שחיקת זמן (Theta)": f"{cal.time_decay_ratio:.1f}x",
+                    "נימוק תמחור בלייב": cal.rationale,
+                })
+            st.dataframe(pd.DataFrame(cal_rows), hide_index=True, width="stretch")
+    else:
+        st.info("לא נמצאו מרווחי זמן זמינים בין הפקיעות השונות בנתוני ה-DDE.")
+            
+    st.markdown("---")
+    st.subheader("⚖️ ארביטראז' תנודתיות (Volatility Arbitrage) מול ציפיות מודל")
+    st.caption("השוואה בין עלות אוכף/פרפר בפועל (Bid/Ask ביצועי) לבין תוחלת התנודתיות המשוקללת של המערכת, לאיתור תמחור חסר/יתר בשוק.")
+    
+    if dde_result.chains and data.forecast_volatility:
+        from ta35_dashboard.analytics.realtime_strategies import analyze_volatility_arbitrage
+        
+        all_vol_proposals = []
+        for c in dde_result.chains:
+            proposals = analyze_volatility_arbitrage(
+                chain=c,
+                spot_price=dde_result.spot_price,
+                expected_vol=data.forecast_volatility,
+            )
+            all_vol_proposals.extend(proposals)
+            
+        if all_vol_proposals:
+            vol_rows = []
+            for vp in all_vol_proposals:
+                vol_rows.append({
+                    "אסטרטגיה (סטרייקים)": vp.strategy_name,
+                    "ימים לפקיעה": f"{vp.expiration_days:.0f} ימים",
+                    "מחיר ביצוע (שוק)": f"{vp.market_price_pts:.2f} נק'",
+                    "מחיר הוגן (מודל)": f"{vp.theoretical_price_pts:.2f} נק'",
+                    "פער (Edge)": f"{vp.gap_pct:+.1%}",
+                    "המלצה": "🟢 Buy (זול)" if vp.recommendation == "Buy" else "🔴 Sell (יקר)"
+                })
+            st.dataframe(pd.DataFrame(vol_rows), hide_index=True, width="stretch")
+        else:
+            st.info("לא אותרו פערי ארביטראז' משמעותיים (>5%) מול תנודתיות המודל.")
+    else:
+        st.info("חסרים נתוני שרשראות אופציות או תחזית תנודתיות לביצוע אנליזת Vol-Arb.")
 
     st.markdown("---")
 
@@ -759,15 +845,26 @@ with tab_research:
         st.dataframe(pd.DataFrame(matrix_rows), hide_index=True, width="stretch")
 
     state_left, state_right = st.columns(2)
-    vol_score = (
-        "לא זמין"
-        if data.volatility_direction_score is None
-        else f"{data.volatility_direction_score:+.0%}"
-    )
+    is_contracting = "מתכווצת" in str(data.volatility_direction)
+    if is_contracting:
+        vol_score = (
+            "מתכווצת ⬇️"
+            if data.volatility_direction_score is None
+            else f"-{abs(data.volatility_direction_score):.0%}"
+        )
+        vol_color = "normal"  # Negative delta gives down arrow ⬇️
+    else:
+        vol_score = (
+            "לא זמין"
+            if data.volatility_direction_score is None
+            else f"{data.volatility_direction_score:+.0%}"
+        )
+        vol_color = "normal"
+
     trend_score = (
         "לא זמין" if data.market_trend_score is None else f"{data.market_trend_score:+.0%}"
     )
-    state_left.metric("כיוון התנודתיות", data.volatility_direction, delta=vol_score)
+    state_left.metric("כיוון התנודתיות", data.volatility_direction, delta=vol_score, delta_color=vol_color)
     state_right.metric("מצב מגמת ת״א־35", data.market_trend, delta=trend_score)
 
     evidence = data.premium_evidence
@@ -926,31 +1023,73 @@ with tab_data:
     st.dataframe(pd.DataFrame(health_rows), hide_index=True, width="stretch")
     
     st.markdown("---")
-    st.subheader("📁 סטטוס קבצי אופציות (DDE)")
+    st.subheader("⚡ העלאת וסריקת קבצי אופציות בזמן אמת (DDE)")
     
-    dde_auto_5m = st.checkbox("🔄 רענון אוטומטי של המערכת כל 5 דקות", value=False, key="dde_auto_refresh_5m")
-    if dde_auto_5m:
-        import time
-        time.sleep(300)
+    col_up_dde, col_ref_dde = st.columns([1.5, 1.0])
+    with col_up_dde:
+        uploaded_dde = st.file_uploader(
+            "העלאת קבצי DDE/אופציות מעודכנים (UTF-16LE / TSV / CSV)",
+            type=["txt", "csv", "tsv"],
+            accept_multiple_files=True,
+            help="ניתן להעלות קבצים מעודכנים כאן או לשמור קבצי DDE בתיקיית הפרויקט. המערכת מזהה וסורקת אותם אוטומטית.",
+            key="dde_file_uploader",
+        )
+    with col_ref_dde:
+        st.markdown("<br>", unsafe_allow_html=True)
+        dde_auto_15s = st.checkbox("🔄 רענון אוטומטי של המערכת כל 15 שניות", value=False, key="dde_auto_refresh_15s")
+
+    if uploaded_dde:
+        # Saving is now handled at the top of the script
+        upload_sig = "_".join(getattr(uf, 'file_id', '') for uf in uploaded_dde)
+        if st.session_state.get("last_notified_upload_sig") != upload_sig:
+            st.success(f"📥 נקלטו ונשמרו {len(uploaded_dde)} קבצי DDE חדשים בתיקיית DDE בהצלחה!")
+            st.session_state["last_notified_upload_sig"] = upload_sig
+
+    if dde_auto_15s:
+        time.sleep(15)
         st.rerun()
 
-    if 'dde_result' in locals() and dde_result.source_files:
+    if 'dde_result' in locals() and dde_result and dde_result.source_files:
         import datetime
         from pathlib import Path
         dde_rows = []
-        for f in dde_result.source_files:
-            p = Path(f) if isinstance(f, str) else f
-            if p.exists():
-                mtime = datetime.datetime.fromtimestamp(p.stat().st_mtime)
-                size_kb = p.stat().st_size / 1024
+        for idx, f in enumerate(dde_result.source_files):
+            fname = Path(f).name
+            candidate_p = PROJECT_ROOT / "DDE" / fname
+            if not candidate_p.exists():
+                candidate_p = PROJECT_ROOT / fname
+            if not candidate_p.exists():
+                candidate_p = PROJECT_ROOT / "downloads" / fname
+            if not candidate_p.exists():
+                candidate_p = Path(f)
+
+            if candidate_p.exists():
+                mtime = datetime.datetime.fromtimestamp(candidate_p.stat().st_mtime)
+                size_kb = candidate_p.stat().st_size / 1024
+                
+                matched_chain = dde_result.chains[idx] if idx < len(dde_result.chains) else None
+                tot_q = len(matched_chain.quotes) if matched_chain else 0
+                val_q = getattr(matched_chain, "quotes_with_prices", sum(1 for q in matched_chain.quotes if getattr(q, 'call_mid', None) is not None or getattr(q, 'put_mid', None) is not None)) if matched_chain else 0
+                
+                if val_q > 0:
+                    q_str = f"{val_q} / {tot_q}"
+                    status_str = "🟢 פעיל"
+                else:
+                    q_str = f"0 / {tot_q} (ריק ממחירים!)"
+                    status_str = "⚠️ עמודות מחיר ריקות"
+
                 dde_rows.append({
-                    "שם קובץ": p.name,
+                    "שם קובץ": fname,
                     "תאריך שינוי אחרון": mtime.strftime("%d/%m/%Y %H:%M:%S"),
                     "גודל (KB)": f"{size_kb:.1f}",
-                    "סטטוס": "פעיל"
+                    "ציטוטים עם מחיר": q_str,
+                    "סטטוס": status_str,
                 })
         if dde_rows:
+            st.markdown("##### 📁 קבצי ה-DDE הפעילים והנסרקים כעת במערכת:")
             st.dataframe(pd.DataFrame(dde_rows), hide_index=True, width="stretch")
+            if any("ריק" in r["סטטוס"] for r in dde_rows):
+                st.warning("⚠️ **שים לב:** בקבצי ה-DDE שנמצאו, עמודות המחירים (ביקוש/היצע/שער אחרון) ריקות! ודא שתוכנת המסחר פתוחה וחיבור ה-DDE (או האקסל) פעיל בלייב בעת היצוא.")
         else:
             st.info("קיימים קבצים אך לא ניתן לקרוא אותם.")
     else:

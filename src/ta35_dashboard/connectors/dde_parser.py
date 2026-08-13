@@ -49,6 +49,10 @@ class ParsedOptionChain:
     synthetic_spot: float | None
     quotes: tuple[OptionQuote, ...]
 
+    @property
+    def quotes_with_prices(self) -> int:
+        return sum(1 for q in self.quotes if q.call_mid is not None or q.put_mid is not None)
+
     def to_dataframe(self) -> pd.DataFrame:
         records = []
         for q in self.quotes:
