@@ -12,8 +12,10 @@ class Settings:
     model_version: str = "1.5.0"
     repository_url: str = "https://github.com/guykul-afk/35-trading"
     trading_days_per_year: float = 245.0
+    calendar_days_per_year: float = 365.25
 
 
 SETTINGS = Settings()
 TRADING_DAYS_PER_YEAR = SETTINGS.trading_days_per_year
+CALENDAR_DAYS_PER_YEAR = SETTINGS.calendar_days_per_year
 

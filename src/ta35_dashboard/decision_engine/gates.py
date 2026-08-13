@@ -60,17 +60,17 @@ def calculate_opportunity_score(
     exec_bid_ask_spread_pct: float | None = None,
     historical_winrate: float | None = None,
     strategy_fit_score: float | None = None,
-) -> float:
-    """Calculates Layer 6 Opportunity Score (0 - 100) normalized strictly over measured components:
-    - Edge after costs: 35%
-    - Forecast Confidence: 15%
-    - Risk Efficiency: 10%
-    - Execution & Liquidity: 20% (measured if spread available)
-    - Strategy/Regime Fit: 10% (measured if fit available)
-    - Historical Evidence: 10% (measured if historical winrate available)
+) -> tuple[float, float]:
+    """Calculates Layer 6 Opportunity Score (0 - 100).
+    Missing execution/fit/evidence data penalizes the score by leaving those weights as 0.
+    
+    Returns:
+        tuple[float, float]: (final_score, score_coverage)
     """
     total_score = 0.0
     total_weight = 0.0
+    
+    max_possible_weight = 35.0 + 15.0 + 10.0 + 20.0 + 10.0 + 10.0  # 100.0
 
     # 1. Edge score (Weight 35)
     edge_to_risk = estimated_edge / max(1.0, candidate.max_loss)
@@ -105,13 +105,10 @@ def calculate_opportunity_score(
         total_score += min(10.0, max(0.0, historical_winrate * 10.0))
         total_weight += 10.0
 
-    # Normalize to 0-100 scale over measured weights only
-    if total_weight > 0:
-        final_score = (total_score / total_weight) * 100.0
-    else:
-        final_score = 0.0
+    final_score = round(min(100.0, max(0.0, total_score)), 1)
+    score_coverage = round(total_weight / max_possible_weight, 3)
 
-    return round(min(100.0, max(0.0, final_score)), 1)
+    return final_score, score_coverage
 
 
 def math_is_infinite(val: float) -> bool:

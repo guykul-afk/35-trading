@@ -189,14 +189,25 @@ def analyze_dde_options_data(
 
     spot_price = synth_spot or spot_override or 4145.35
 
-    # 5b. Persist parsed option chains to SQLite
+    # 5b. Persist parsed option chains to SQLite & raw file archive
     try:
         repo_path = db_path or (root_path / "data" / "ta35_dashboard.db")
         repo = SQLiteRepository(repo_path)
         for (mtime, s_name, _), f_chain in zip(unique_chains, final_chains):
             repo.insert_chain_snapshots(f_chain, source_file=s_name)
+
+        # Archive raw DDE files to data/dde_archive with timestamp
+        archive_dir = root_path / "data" / "dde_archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        import shutil
+        for p in candidate_paths:
+            if p.exists() and p.is_file():
+                mtime_str = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y%m%d_%H%M%S")
+                target_archive_path = archive_dir / f"{mtime_str}_{p.name}"
+                if not target_archive_path.exists():
+                    shutil.copy2(p, target_archive_path)
     except Exception as e:
-        logger.error("Failed saving chain snapshots to SQLite DB: %s", e)
+        logger.error("Failed saving chain snapshots/archive: %s", e)
 
 
     # Re-sort final chains in case their days_to_expiration changed

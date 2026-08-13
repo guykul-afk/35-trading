@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import math
 import numpy as np
 
-from ta35_dashboard.config import TRADING_DAYS_PER_YEAR
+from ta35_dashboard.config import CALENDAR_DAYS_PER_YEAR
 from ta35_dashboard.connectors.dde_parser import ParsedOptionChain
 
 
@@ -38,7 +38,7 @@ def calculate_chain_indicators(
         return ChainMetricsResult(None, None, None, None, None, None)
 
     F = chain.synthetic_spot or spot_price
-    T = max(0.001, chain.days_to_expiration / TRADING_DAYS_PER_YEAR)
+    T = max(0.001, chain.days_to_expiration / CALENDAR_DAYS_PER_YEAR)
 
     # Filter valid quotes with IV
     valid_quotes = sorted(

@@ -25,13 +25,10 @@ from ta35_dashboard.analytics.shortterm_strategies import (
 
 data = bundle()
 
+from ta35_dashboard.analytics.forecasting import predict_live_direction
+
 # Extract rise probability and spot for DDE initialization
-prob_rows_init = [
-    row for row in data.family_probabilities if int(row.get("horizon", 0)) in {3, 7, 14}
-]
-latest_prob_init = 0.50
-if prob_rows_init:
-    latest_prob_init = float(prob_rows_init[0]["latest_probability"])
+latest_prob_init, prob_confidence = predict_live_direction(horizon_days=7)
 
 last_close_val_init = float(data.ta35_closes[-1]) if data.ta35_closes else 4150.0
 
@@ -113,18 +110,15 @@ with tab_market:
         help="שקלול אינדיקטורי התנודתיות והמשטר (VTA35, Cboe VIX, VRP, אחוזון תנודתיות)",
     )
 
-    prob_rows = [
-        row for row in data.family_probabilities if int(row.get("horizon", 0)) in {3, 7, 14}
-    ]
     market_state = data.regime_matrix.market_state
-    if prob_rows:
-        latest_prob = float(prob_rows[0]["latest_probability"])
-        prob_axis = "ת״א־35 יעלה"
-        market_delta = f"P({prob_axis}) {latest_prob:.1%} · Brier {float(prob_rows[0]['brier']):.3f}"
-    elif data.market_trend_score is not None:
+    
+    if data.market_trend_score is not None:
         market_delta = f"ניקוד מגמה {data.market_trend_score:+.2f}"
     else:
         market_delta = "Context Only"
+        
+    prob_axis = "ת״א־35 יעלה"
+    market_delta = f"P({prob_axis}) {latest_prob_init:.1%} · {market_delta}"
 
     kpi4.metric(
         "צפי מדד משוקלל",
@@ -552,7 +546,7 @@ with tab_research:
 
     st_dde_res = analyze_dde_options_data(
         spot_override=last_close_val,
-        prob_rise=latest_prob if 'latest_prob' in locals() else 0.50,
+        prob_rise=latest_prob_init,
     )
 
     if st_dde_res.weekly_chain or st_dde_res.monthly_chain:
@@ -564,7 +558,7 @@ with tab_research:
             monthly_chain=st_dde_res.monthly_chain,
             spot_price=st_dde_res.spot_price,
             horizon_days=st_horizon,
-            prob_rise=latest_prob if 'latest_prob' in locals() else 0.50,
+            prob_rise=latest_prob_init,
             implied_vol=iv_val,
         )
 
@@ -657,22 +651,28 @@ with tab_research:
                 card_label = card.label
                 card_val = card.value
 
-                if card.key == "forecast_rv_3d":
-                    card_label = f"תחזית RV ל־{strength_horizon} ימים"
-                elif card.key == "expected_move_3d_points":
-                    card_label = f"טווח {strength_horizon} ימים"
-                    if last_close_val is not None and data.forecast_volatility is not None:
-                        card_val = last_close_val * data.forecast_volatility * math.sqrt(strength_horizon / 252.0)
-                elif card.key == "har_rv_3d":
-                    card_label = f"HAR-EOD ל־{strength_horizon} ימים"
-                elif card.key == "matched_vrp_3d":
-                    card_label = f"VRP מותאם ({strength_horizon} ימים)"
+                query_key = card.key
+                
+                if query_key.endswith("_3d") or query_key == "expected_move_3d_points":
+                    if query_key == "expected_move_3d_points":
+                        query_key = f"expected_move_{strength_horizon}d_points"
+                        card_label = f"טווח {strength_horizon} ימים"
+                        if last_close_val is not None and data.forecast_volatility is not None:
+                            card_val = last_close_val * data.forecast_volatility * math.sqrt(strength_horizon / 252.0)
+                    else:
+                        query_key = query_key.replace("_3d", f"_{strength_horizon}d")
+                        if "forecast_rv" in query_key:
+                            card_label = f"תחזית RV ל־{strength_horizon} ימים"
+                        elif "har_rv" in query_key:
+                            card_label = f"HAR-EOD ל־{strength_horizon} ימים"
+                        elif "matched_vrp" in query_key:
+                            card_label = f"VRP מותאם ({strength_horizon} ימים)"
 
                 display = (
                     "לא זמין" if card_val is None else format(card_val, card.format)
                 )
                 vol_result = data.backtest.indicator(
-                    card.key, strength_horizon, "volatility", card.volatility_arrow
+                    query_key, strength_horizon, "volatility", card.volatility_arrow
                 )
                 column.metric(
                     card_label,
@@ -792,11 +792,18 @@ with tab_research:
         tested_horizon = strength_horizon
         indicator_rows = []
         for card in data.cards:
+            query_key = card.key
+            if query_key.endswith("_3d") or query_key == "expected_move_3d_points":
+                if query_key == "expected_move_3d_points":
+                    query_key = f"expected_move_{tested_horizon}d_points"
+                else:
+                    query_key = query_key.replace("_3d", f"_{tested_horizon}d")
+                    
             vol_result = report.indicator(
-                card.key, tested_horizon, "volatility", card.volatility_arrow
+                query_key, tested_horizon, "volatility", card.volatility_arrow
             )
             market_result = report.indicator(
-                card.key, tested_horizon, "market", card.market_arrow
+                query_key, tested_horizon, "market", card.market_arrow
             )
             card_label = card.label
             if card.key == "forecast_rv_3d":
@@ -917,6 +924,69 @@ with tab_data:
         for item in data.health
     ]
     st.dataframe(pd.DataFrame(health_rows), hide_index=True, width="stretch")
+    
+    st.markdown("---")
+    st.subheader("📁 סטטוס קבצי אופציות (DDE)")
+    
+    dde_auto_5m = st.checkbox("🔄 רענון אוטומטי של המערכת כל 5 דקות", value=False, key="dde_auto_refresh_5m")
+    if dde_auto_5m:
+        import time
+        time.sleep(300)
+        st.rerun()
+
+    if 'dde_result' in locals() and dde_result.source_files:
+        import datetime
+        from pathlib import Path
+        dde_rows = []
+        for f in dde_result.source_files:
+            p = Path(f) if isinstance(f, str) else f
+            if p.exists():
+                mtime = datetime.datetime.fromtimestamp(p.stat().st_mtime)
+                size_kb = p.stat().st_size / 1024
+                dde_rows.append({
+                    "שם קובץ": p.name,
+                    "תאריך שינוי אחרון": mtime.strftime("%d/%m/%Y %H:%M:%S"),
+                    "גודל (KB)": f"{size_kb:.1f}",
+                    "סטטוס": "פעיל"
+                })
+        if dde_rows:
+            st.dataframe(pd.DataFrame(dde_rows), hide_index=True, width="stretch")
+        else:
+            st.info("קיימים קבצים אך לא ניתן לקרוא אותם.")
+    else:
+        st.info("לא נמצאו קבצי DDE אוטומטיים בספריית הפרויקט.")
+
+    with st.expander("📦 ארכיון נתוני DDE היסטוריים (SQLite & Raw Files Archive)", expanded=True):
+        from ta35_dashboard.storage.repository import SQLiteRepository
+        repo = SQLiteRepository(SETTINGS.database_path)
+        total_quotes = repo.get_chain_snapshot_count() if hasattr(repo, "get_chain_snapshot_count") else 0
+        recent_snaps = repo.get_chain_snapshot_summary(limit=10) if hasattr(repo, "get_chain_snapshot_summary") else []
+        
+        archive_files_count = 0
+        arch_dir = PROJECT_ROOT / "data" / "dde_archive"
+        if arch_dir.exists():
+            archive_files_count = len(list(arch_dir.glob("*")))
+            
+        c_arch1, c_arch2, c_arch3 = st.columns(3)
+        c_arch1.metric("ציטוטי אופציות בארכיון SQLite", f"{total_quotes:,}")
+        c_arch2.metric("קבצי מקור שמורים ב-Archive", f"{archive_files_count:,}")
+        c_arch3.metric("סטטוס אגירה", "🟢 פועל ואוגר" if total_quotes > 0 else "⚪ ממתין למבזק")
+        
+        if recent_snaps:
+            st.markdown("##### 🕒 דגימות DDE אחרונות שאוגרו בבסיס הנתונים:")
+            arch_rows = []
+            for snap in recent_snaps:
+                arch_rows.append({
+                    "זמן דגימה": snap["timestamp"],
+                    "קובץ מקור": snap["source_file"],
+                    "פקיעה": snap["expiration_label"],
+                    "כמות ציטוטים שנשמרו": snap["quotes_count"],
+                    "טווח סטרייקים": f"{snap['min_strike']:,.0f} – {snap['max_strike']:,.0f}",
+                    "מדד סינטטי": f"{snap['synthetic_spot']:,.1f}" if snap['synthetic_spot'] else "—",
+                })
+            st.dataframe(pd.DataFrame(arch_rows), hide_index=True, width="stretch")
+        else:
+            st.caption("עדיין לא נרשמו דגימות DDE בבסיס הנתונים.")
 
 st.caption(
     "כל המדדים הם כלי תמיכה בלבד. אין במערכת הוראות מסחר, חיבור לחשבון או נתוני זמן אמת."

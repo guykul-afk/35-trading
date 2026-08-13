@@ -112,8 +112,13 @@ def render_eod_strategy_hero(
     spot_price: float = 4150.0,
 ) -> None:
     """Renders StrategyRecommendation card for EOD Mode with explicit instructions, statistical legs, and visual chart."""
-    st.warning("⚠️ **EOD ONLY — המלצת אסטרטגיה כללית בלבד (ללא DDE)**")
-    st.error("👉 **הוראת ביצוע:** טען DDE כדי לתמחר ולבחור רגליים, סטרייקים ומחיר לימיט בר-ביצוע.")
+    has_dde_warning = any("DDE" in w or "Options chain" in w for w in rec.warnings)
+    if has_dde_warning and any("found but" in w or "נטענו" in w for w in rec.warnings):
+        st.warning("⚠️ **DDE טעון (טרום מסחר / ציטוטים סטטיים) — ציטוטי Bid/Ask בלייב אינם פעילים כעת**")
+        st.info("👉 **הוראת ביצוע:** הנתונים מבוססים על מחירי אמצע/סגירה עד לתחילת המסחר הרציף.")
+    else:
+        st.warning("⚠️ **EOD ONLY — המלצת אסטרטגיה כללית בלבד (ללא DDE)**")
+        st.error("👉 **הוראת ביצוע:** טען DDE כדי לתמחר ולבחור רגליים, סטרייקים ומחיר לימיט בר-ביצוע.")
 
     card_container = st.container(border=True)
     with card_container:

@@ -171,3 +171,16 @@ def qlike(actual_variance: np.ndarray, forecast_variance: np.ndarray) -> float:
     ratio = actual_variance[valid] / forecast_variance[valid]
     return float(np.mean(ratio - np.log(ratio) - 1))
 
+
+def predict_live_direction(horizon_days: int) -> tuple[float, float]:
+    """Live Directional Predictor (P0.1).
+    
+    Currently returns a neutral probability (0.5) with zero confidence, 
+    as the underlying model does not currently beat the baseline Brier score.
+    This prevents the decision engine from hallucinating directional EV.
+    
+    Returns:
+        tuple[float, float]: (prob_up, confidence)
+    """
+    return 0.50, 0.0
+

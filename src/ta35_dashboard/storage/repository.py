@@ -282,3 +282,25 @@ class SQLiteRepository:
                 records,
             )
 
+    def get_chain_snapshot_count(self) -> int:
+        """Return total stored historical DDE quote rows."""
+        self.initialize()
+        with self._connect() as connection:
+            row = connection.execute("SELECT COUNT(*) FROM chain_snapshots").fetchone()
+            return row[0] if row else 0
+
+    def get_chain_snapshot_summary(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Return recent snapshot runs summary."""
+        self.initialize()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT timestamp, source_file, expiration_label, COUNT(*) as quotes_count,
+                          MIN(strike) as min_strike, MAX(strike) as max_strike, synthetic_spot
+                   FROM chain_snapshots
+                   GROUP BY timestamp, source_file, expiration_label
+                   ORDER BY timestamp DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+

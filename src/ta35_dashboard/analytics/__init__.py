@@ -2,6 +2,7 @@ from .results import MODEL_VERSION, ScalarResult
 from .forecasting import (
     gjr_eod_forecast,
     har_eod_forecast,
+    predict_live_direction,
     qlike,
     variance_risk_premium,
 )

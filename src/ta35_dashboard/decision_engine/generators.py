@@ -28,6 +28,7 @@ def map_eod_strategy_families(
     regime: str,
     volatility_state: str = "מתכווצת",
     market_state: str = "ניטרלי",
+    is_premium_eligible: bool = True,
 ) -> tuple[StrategyFamily, tuple[StrategyFamily, ...], str, str]:
     """Maps EOD market state (P_up, forecast_rv, regime, volatility_state, market_state) to primary and alternative strategy families.
     
@@ -66,31 +67,31 @@ def map_eod_strategy_families(
 
     if is_bullish:
         direction_view = "שורי (Bullish)"
-        if is_vol_rich or is_vol_contracting:
+        if (is_vol_rich or is_vol_contracting) and is_premium_eligible:
             primary = StrategyFamily.BULL_PUT_CREDIT
             alts = (StrategyFamily.BULL_CALL_DEBIT, StrategyFamily.DIRECTIONAL_BUTTERFLY)
         else:
             primary = StrategyFamily.BULL_CALL_DEBIT
-            alts = (StrategyFamily.BULL_PUT_CREDIT, StrategyFamily.DIRECTIONAL_BUTTERFLY)
+            alts = (StrategyFamily.BULL_PUT_CREDIT, StrategyFamily.DIRECTIONAL_BUTTERFLY) if is_premium_eligible else (StrategyFamily.DIRECTIONAL_BUTTERFLY,)
     elif is_bearish:
         direction_view = "דובי (Bearish)"
-        if is_vol_rich or is_vol_contracting:
+        if (is_vol_rich or is_vol_contracting) and is_premium_eligible:
             primary = StrategyFamily.BEAR_CALL_CREDIT
             alts = (StrategyFamily.BEAR_PUT_DEBIT, StrategyFamily.DIRECTIONAL_BUTTERFLY)
         else:
             primary = StrategyFamily.BEAR_PUT_DEBIT
-            alts = (StrategyFamily.BEAR_CALL_CREDIT, StrategyFamily.DIRECTIONAL_BUTTERFLY)
+            alts = (StrategyFamily.BEAR_CALL_CREDIT, StrategyFamily.DIRECTIONAL_BUTTERFLY) if is_premium_eligible else (StrategyFamily.DIRECTIONAL_BUTTERFLY,)
     else:
         direction_view = "נייטרלי (Neutral / Rangebound)"
         if is_vol_expanding:
             primary = StrategyFamily.LONG_STRADDLE
             alts = (StrategyFamily.LONG_STRANGLE, StrategyFamily.LONG_IRON_BUTTERFLY)
-        elif is_vol_contracting or is_vol_rich:
+        elif (is_vol_contracting or is_vol_rich) and is_premium_eligible:
             primary = StrategyFamily.IRON_CONDOR
             alts = (StrategyFamily.IRON_BUTTERFLY, StrategyFamily.LONG_BUTTERFLY)
         else:
             primary = StrategyFamily.LONG_BUTTERFLY
-            alts = (StrategyFamily.IRON_CONDOR, StrategyFamily.DEBIT_CONDOR)
+            alts = (StrategyFamily.IRON_CONDOR, StrategyFamily.DEBIT_CONDOR) if is_premium_eligible else (StrategyFamily.DEBIT_CONDOR,)
             
     return primary, alts, direction_view, vol_view
 

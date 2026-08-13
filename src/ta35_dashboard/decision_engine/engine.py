@@ -157,8 +157,9 @@ def run_trade_decision_engine(
                 cand, mdl_ev, edge, risk_budget_nis=risk_budget_nis
             )
             if passed:
-                score = calculate_opportunity_score(cand, mdl_ev, edge, mkt_pop, model_dist.confidence)
-                all_candidates.append((cand, score, mdl_ev, mkt_ev, edge, mkt_pop))
+                score, coverage = calculate_opportunity_score(cand, mdl_ev, edge, mkt_pop, model_dist.confidence)
+                if coverage >= 0.6:  # Gate: Must have at least 60% of data (requires more than just Edge+Conf+Risk)
+                    all_candidates.append((cand, score, mdl_ev, mkt_ev, edge, mkt_pop))
 
     # If no trade passed gates -> Output PASS TradeTicket
     if not all_candidates:

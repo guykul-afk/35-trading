@@ -9,25 +9,29 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
-from ta35_dashboard.config import TRADING_DAYS_PER_YEAR
+from ta35_dashboard.config import CALENDAR_DAYS_PER_YEAR
 from ta35_dashboard.decision_engine.models import CandidateTrade, ModelDistribution
 
 
 def _norm_ppf(p: float) -> float:
-    """Normal quantile function (Phi^-1) with fallback to Acklam rational approximation."""
+    """Normal quantile function (Phi^-1) with fallback to math.erf binary search."""
     try:
         from scipy.stats import norm
         return float(norm.ppf(p))
     except ImportError:
-        p_c = max(0.0001, min(0.9999, p))
-        q = p_c - 0.5
-        if abs(q) < 0.42:
-            r = q * q
-            return float(q * (((-25.44106049637 * r + 41.39119773534) * r - 18.61500062529) * r + 2.50662823884) / ((((3.13082909833 * r - 21.06224101826) * r + 23.08336743743) * r - 8.47351093090) * r + 1.0))
-        r = p_c if q < 0 else 1.0 - p_c
-        r = math.sqrt(-math.log(r))
-        x = (((0.010328 * r + 0.802853) * r + 2.515517) / (((0.001308 * r + 0.189269) * r + 1.432788) * r + 1.0))
-        return float(-x if q < 0 else x)
+        # Fallback using binary search over math.erf
+        # Phi(x) = 0.5 * (1 + erf(x / sqrt(2)))
+        p_c = max(0.000001, min(0.999999, p))
+        low = -10.0
+        high = 10.0
+        for _ in range(50):
+            mid = (low + high) / 2.0
+            p_mid = 0.5 * (1.0 + math.erf(mid / math.sqrt(2.0)))
+            if p_mid < p_c:
+                low = mid
+            else:
+                high = mid
+        return float((low + high) / 2.0)
 
 
 def evaluate_payoff_at_spot(candidate: CandidateTrade, spot_at_exp: float) -> float:
@@ -65,7 +69,7 @@ def compute_dual_distribution_edge(
     # 1. Model Distribution (Log-normal around spot with model direction & RV)
     forecast_rv = max(0.05, model_dist.forecast_rv)
     days_to_exp = max(1.0, candidate.expiry.days_to_expiration)
-    t_years = days_to_exp / TRADING_DAYS_PER_YEAR
+    t_years = days_to_exp / CALENDAR_DAYS_PER_YEAR
     sigma_t = forecast_rv * math.sqrt(t_years)
     
     # Adjust drift for model direction probability: sigma_t * Phi^-1(p)
