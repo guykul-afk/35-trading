@@ -9,10 +9,25 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
-from scipy.stats import norm
-
 from ta35_dashboard.config import TRADING_DAYS_PER_YEAR
 from ta35_dashboard.decision_engine.models import CandidateTrade, ModelDistribution
+
+
+def _norm_ppf(p: float) -> float:
+    """Normal quantile function (Phi^-1) with fallback to Acklam rational approximation."""
+    try:
+        from scipy.stats import norm
+        return float(norm.ppf(p))
+    except ImportError:
+        p_c = max(0.0001, min(0.9999, p))
+        q = p_c - 0.5
+        if abs(q) < 0.42:
+            r = q * q
+            return float(q * (((-25.44106049637 * r + 41.39119773534) * r - 18.61500062529) * r + 2.50662823884) / ((((3.13082909833 * r - 21.06224101826) * r + 23.08336743743) * r - 8.47351093090) * r + 1.0))
+        r = p_c if q < 0 else 1.0 - p_c
+        r = math.sqrt(-math.log(r))
+        x = (((0.010328 * r + 0.802853) * r + 2.515517) / (((0.001308 * r + 0.189269) * r + 1.432788) * r + 1.0))
+        return float(-x if q < 0 else x)
 
 
 def evaluate_payoff_at_spot(candidate: CandidateTrade, spot_at_exp: float) -> float:
@@ -55,7 +70,7 @@ def compute_dual_distribution_edge(
     
     # Adjust drift for model direction probability: sigma_t * Phi^-1(p)
     prob_up = max(0.001, min(0.999, model_dist.direction_probability))
-    drift_bias = sigma_t * float(norm.ppf(prob_up))
+    drift_bias = sigma_t * _norm_ppf(prob_up)
     
     # Grid of prices around spot (from -4 sigma to +4 sigma)
     steps = 100
