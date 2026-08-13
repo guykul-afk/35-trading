@@ -20,6 +20,9 @@ from ta35_dashboard.analytics.realtime_strategies import (
 from ta35_dashboard.connectors.dde_parser import ParsedOptionChain
 
 
+from ta35_dashboard.config import TRADING_DAYS_PER_YEAR
+
+
 def get_shortterm_recommendation(
     weekly_chain: ParsedOptionChain | None,
     monthly_chain: ParsedOptionChain | None,
@@ -58,7 +61,7 @@ def get_shortterm_recommendation(
     rationale_parts = [
         f"**אופק הטרייד:** {horizon_days} ימי מסחר (פקיעה קרובה מתוך נתוני ה-DDE).",
         f"**צפי כיווני משוקלל:** {direction_str} (הסתברות לעלייה: {prob_rise:.1%}).",
-        f"**תנודתיות גלומה לאופק (IV):** {implied_vol:.2%}, מגלמת תנודה יומית צפויה של ±{spot_price * implied_vol * math.sqrt(horizon_days/252.0):.1f} נקודות.",
+        f"**תנודתיות גלומה לאופק (IV):** {implied_vol:.2%}, מגלמת תנודה יומית צפויה של ±{spot_price * implied_vol * math.sqrt(horizon_days/TRADING_DAYS_PER_YEAR):.1f} נקודות.",
         f"**נימוק מסחר:** {top.rationale}",
         f"**תוחלת רווח מתמטית ($EV$):** {ev_sign}{top.expected_value_nis:,.0f} ש״ח לעסקה (סיכוי הצלחה מוערך של {top.probability_of_profit:.1%}).",
     ]

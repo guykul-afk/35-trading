@@ -9,12 +9,17 @@ import numpy as np
 from .results import ScalarResult
 
 
+from ..config import TRADING_DAYS_PER_YEAR
+from .results import ScalarResult
+
+
 def har_eod_forecast(
     prices: Iterable[float], *, horizon: int = 3, minimum_training: int = 80
 ) -> ScalarResult:
     """Forecast annualized RV with a log-HAR proxy with SHAR (semivariance) & HAR-Q adjustments.
 
     Target is un-demeaned realized variance (sum of squared returns) over future horizon.
+    Includes Jensen's inequality correction (+ 0.5 * residual_variance) for log-normal forecast.
     """
 
     close = np.asarray(tuple(prices), dtype=float)
@@ -29,10 +34,10 @@ def har_eod_forecast(
 
     returns = np.diff(np.log(close))
     # Un-demeaned realized variance proxy
-    daily_rv = returns**2 * 245.0
+    daily_rv = returns**2 * TRADING_DAYS_PER_YEAR
     daily_vol = np.sqrt(np.maximum(1e-8, daily_rv))
-    downside_rv = np.minimum(returns, 0.0)**2 * 245.0
-    quarticity = (245.0 / 3.0) * (returns**4)
+    downside_rv = np.minimum(returns, 0.0)**2 * TRADING_DAYS_PER_YEAR
+    quarticity = (TRADING_DAYS_PER_YEAR / 3.0) * (returns**4)
 
     rows: list[list[float]] = []
     targets: list[float] = []
@@ -44,7 +49,7 @@ def har_eod_forecast(
             continue
 
         # Realized Variance over future horizon (un-demeaned)
-        fut_var = float(np.sum(future**2) / len(future)) * 245.0
+        fut_var = float(np.sum(future**2) / len(future)) * TRADING_DAYS_PER_YEAR
         
         # Features: Daily, Weekly, Monthly RV + Downside Semivariance (SHAR) + Quarticity (HAR-Q)
         r_d = math.log(max(daily_rv[position], 1e-6))
@@ -59,8 +64,14 @@ def har_eod_forecast(
     if len(rows) < minimum_training:
         return ScalarResult(None, quality_flags=("insufficient_har_training",))
 
-    beta = np.linalg.lstsq(np.asarray(rows), np.asarray(targets), rcond=None)[0]
+    X = np.asarray(rows)
+    y = np.asarray(targets)
+    beta = np.linalg.lstsq(X, y, rcond=None)[0]
     
+    # Jensen's inequality correction factor for log-normal distribution: exp(E[log X] + 0.5 * Var(res))
+    residuals = y - X @ beta
+    sigma2_resid = float(np.var(residuals, ddof=len(beta))) if len(residuals) > len(beta) else 0.0
+
     current = np.asarray(
         [
             1.0,
@@ -72,7 +83,8 @@ def har_eod_forecast(
         ]
     )
     
-    forecast_var = float(math.exp(float(current @ beta)))
+    forecast_log_var = float(current @ beta)
+    forecast_var = float(math.exp(forecast_log_var + 0.5 * sigma2_resid))
     forecast_vol = math.sqrt(max(1e-6, forecast_var))
     return ScalarResult(min(2.0, max(0.01, forecast_vol)))
 
@@ -129,7 +141,7 @@ def gjr_eod_forecast(
             + gamma * residual**2 * (residual < 0)
             + beta * variance
         )
-    return ScalarResult(math.sqrt(max(variance, 0.0) * 245.0))
+    return ScalarResult(math.sqrt(max(variance, 0.0) * TRADING_DAYS_PER_YEAR))
 
 
 def variance_risk_premium(

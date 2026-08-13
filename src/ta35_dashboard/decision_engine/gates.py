@@ -57,37 +57,61 @@ def calculate_opportunity_score(
     estimated_edge: float,
     market_pop: float,
     model_confidence: float = 0.8,
+    exec_bid_ask_spread_pct: float | None = None,
+    historical_winrate: float | None = None,
+    strategy_fit_score: float | None = None,
 ) -> float:
-    """Calculates Layer 6 Opportunity Score (0 - 100) using frozen weights:
+    """Calculates Layer 6 Opportunity Score (0 - 100) normalized strictly over measured components:
     - Edge after costs: 35%
-    - Execution & Liquidity: 20%
     - Forecast Confidence: 15%
     - Risk Efficiency: 10%
-    - Strategy/Regime Fit: 10%
-    - Historical Evidence: 10%
+    - Execution & Liquidity: 20% (measured if spread available)
+    - Strategy/Regime Fit: 10% (measured if fit available)
+    - Historical Evidence: 10% (measured if historical winrate available)
     """
-    # 1. Edge score (0-35)
+    total_score = 0.0
+    total_weight = 0.0
+
+    # 1. Edge score (Weight 35)
     edge_to_risk = estimated_edge / max(1.0, candidate.max_loss)
     edge_score = min(35.0, max(0.0, edge_to_risk * 100.0 * 1.5))
+    total_score += edge_score
+    total_weight += 35.0
 
-    # 2. Execution score (0-20)
-    exec_score = 15.0  # Default baseline feasibility
-
-    # 3. Forecast Confidence (0-15)
+    # 2. Forecast Confidence (Weight 15)
     conf_score = model_confidence * 15.0
+    total_score += conf_score
+    total_weight += 15.0
 
-    # 4. Risk Efficiency (0-10)
+    # 3. Risk Efficiency (Weight 10)
     prof_to_loss = candidate.max_profit / max(1.0, candidate.max_loss)
     risk_score = min(10.0, max(0.0, prof_to_loss * 5.0))
+    total_score += risk_score
+    total_weight += 10.0
 
-    # 5. Fit score (0-10)
-    fit_score = 8.0
+    # 4. Execution score (Weight 20 if measured)
+    if exec_bid_ask_spread_pct is not None and exec_bid_ask_spread_pct >= 0:
+        exec_score = max(0.0, min(20.0, 20.0 * (1.0 - exec_bid_ask_spread_pct / 0.25)))
+        total_score += exec_score
+        total_weight += 20.0
 
-    # 6. Evidence score (0-10)
-    evidence_score = 7.0
+    # 5. Fit score (Weight 10 if measured)
+    if strategy_fit_score is not None:
+        total_score += min(10.0, max(0.0, strategy_fit_score * 10.0))
+        total_weight += 10.0
 
-    total_score = edge_score + exec_score + conf_score + risk_score + fit_score + evidence_score
-    return round(min(100.0, max(0.0, total_score)), 1)
+    # 6. Evidence score (Weight 10 if measured)
+    if historical_winrate is not None:
+        total_score += min(10.0, max(0.0, historical_winrate * 10.0))
+        total_weight += 10.0
+
+    # Normalize to 0-100 scale over measured weights only
+    if total_weight > 0:
+        final_score = (total_score / total_weight) * 100.0
+    else:
+        final_score = 0.0
+
+    return round(min(100.0, max(0.0, final_score)), 1)
 
 
 def math_is_infinite(val: float) -> bool:

@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 from typing import Any, Sequence
 
-from ta35_dashboard.config import PROJECT_ROOT
+from ta35_dashboard.config import PROJECT_ROOT, TRADING_DAYS_PER_YEAR
 from ta35_dashboard.decision_engine.dual_edge import compute_dual_distribution_edge
 from ta35_dashboard.decision_engine.gates import apply_quality_gates, calculate_opportunity_score
 from ta35_dashboard.decision_engine.generators import generate_candidate_trades, map_eod_strategy_families
@@ -61,7 +61,7 @@ def run_trade_decision_engine(
         model_id=f"MODEL_{model_version}",
         direction_probability=prob_up,
         forecast_rv=forecast_rv,
-        expected_move=spot_price * forecast_rv * math.sqrt(14.0 / 365.0),
+        expected_move=spot_price * forecast_rv * math.sqrt(14.0 / TRADING_DAYS_PER_YEAR),
         confidence=0.82 if 0.40 <= prob_up <= 0.60 else 0.88,
         regime=regime,
     )
@@ -80,7 +80,7 @@ def run_trade_decision_engine(
         )
         
         # Calculate 3-7 day statistical target range for underlying
-        target_move = spot_price * forecast_rv * math.sqrt(7.0 / 365.0)
+        target_move = spot_price * forecast_rv * math.sqrt(7.0 / TRADING_DAYS_PER_YEAR)
         if prob_up >= 0.55:
             target_range = (round(spot_price, 1), round(spot_price + target_move, 1))
             inval_level = round(spot_price - target_move * 0.8, 1)
@@ -212,9 +212,9 @@ def run_trade_decision_engine(
             time_exit_days=7.0,
             signal_invalidation="P_model flip / edge erosion",
             roll_policy="None",
-            similar_cases=42,
-            forward_track_record_winrate=0.58,
-            strategy_fit=0.85,
+            similar_cases=None,
+            forward_track_record_winrate=None,
+            strategy_fit=None,
             warnings=("NO_TRADE: No candidate trade met minimum risk-reward gates",),
             snapshot_id=snapshot_id,
             model_version=model_version,
@@ -246,8 +246,8 @@ def run_trade_decision_engine(
         legs=best_cand.legs,
         limit_price=round(best_cand.limit_price, 2),
         net_debit_credit=round(best_cand.net_debit_credit, 2),
-        quote_age_seconds=12.0,
-        bid_ask_width=0.05,
+        quote_age_seconds=None,
+        bid_ask_width=None,
         expected_slippage=5.0,
         fees_nis=len(best_cand.legs) * 3.0,
         model_direction_probability=prob_up,
@@ -257,15 +257,15 @@ def run_trade_decision_engine(
         market_rnd_id=f"RND_{best_cand.expiry.expiration_date}",
         market_pop=round(best_mkt_pop, 3),
         market_iv=forecast_rv,
-        skew=0.02,
-        term_structure=0.01,
+        skew=None,
+        term_structure=None,
         market_ev_after_costs=round(best_mkt_ev, 1),
         model_ev_after_costs=round(best_mdl_ev, 1),
         estimated_edge=round(best_edge, 1),
         edge_to_risk_ratio=round(best_edge / max(1.0, best_cand.max_loss), 3),
         max_profit=round(best_cand.max_profit, 1),
         max_loss=round(best_cand.max_loss, 1),
-        tail_loss_metric=round(best_cand.max_loss * 1.1, 1),
+        tail_loss_metric=round(best_cand.max_loss, 1),
         breakevens=tuple(round(b, 1) for b in best_cand.breakevens),
         delta=round(best_cand.delta, 3),
         gamma=round(best_cand.gamma, 4),
@@ -280,9 +280,9 @@ def run_trade_decision_engine(
         time_exit_days=round(best_cand.expiry.days_to_expiration * 0.7, 1),
         signal_invalidation=f"מדד חוצה {round(spot_price * (0.97 if prob_up >= 0.5 else 1.03), 1)} או נפילה ב-Edge אל מתחת ל-20 ש״ח",
         roll_policy="Time spread rolls standard",
-        similar_cases=38,
-        forward_track_record_winrate=0.62,
-        strategy_fit=0.90,
+        similar_cases=None,
+        forward_track_record_winrate=None,
+        strategy_fit=None,
         warnings=(),
         snapshot_id=snapshot_id,
         model_version=model_version,

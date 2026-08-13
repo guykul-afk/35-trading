@@ -9,6 +9,9 @@ from __future__ import annotations
 import math
 from typing import Sequence
 
+from scipy.stats import norm
+
+from ta35_dashboard.config import TRADING_DAYS_PER_YEAR
 from ta35_dashboard.decision_engine.models import CandidateTrade, ModelDistribution
 
 
@@ -47,12 +50,12 @@ def compute_dual_distribution_edge(
     # 1. Model Distribution (Log-normal around spot with model direction & RV)
     forecast_rv = max(0.05, model_dist.forecast_rv)
     days_to_exp = max(1.0, candidate.expiry.days_to_expiration)
-    t_years = days_to_exp / 365.0
+    t_years = days_to_exp / TRADING_DAYS_PER_YEAR
     sigma_t = forecast_rv * math.sqrt(t_years)
     
-    # Adjust drift for model direction probability
-    prob_up = model_dist.direction_probability
-    drift_bias = (prob_up - 0.5) * 2.0 * sigma_t
+    # Adjust drift for model direction probability: sigma_t * Phi^-1(p)
+    prob_up = max(0.001, min(0.999, model_dist.direction_probability))
+    drift_bias = sigma_t * float(norm.ppf(prob_up))
     
     # Grid of prices around spot (from -4 sigma to +4 sigma)
     steps = 100

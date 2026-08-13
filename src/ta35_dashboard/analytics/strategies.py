@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 import math
 from typing import Any
 
+from ..config import TRADING_DAYS_PER_YEAR
 from .volatility import probability_band
 
 
@@ -54,7 +55,7 @@ def calculate_strategy_strikes(
     if spot is None or forecast_volatility is None or spot <= 0 or forecast_volatility <= 0:
         return {}
 
-    one_sigma = spot * forecast_volatility * math.sqrt(horizon_days / 252.0)
+    one_sigma = spot * forecast_volatility * math.sqrt(horizon_days / TRADING_DAYS_PER_YEAR)
     is_stressed = regime in {"זהירות", "לחץ גבוה"}
     stress_buffer = 0.5 if is_stressed else 0.0
     skew_put_offset = 0.2  # Put skew offset OTM

@@ -25,7 +25,7 @@ from ta35_dashboard.analytics import (
 
 
 class LiteAnalyticsTests(unittest.TestCase):
-    def test_close_to_close_and_expected_move_use_252_sessions(self):
+    def test_close_to_close_and_expected_move_use_245_sessions(self):
         prices = [
             100,
             100 * math.exp(0.01),
@@ -33,13 +33,13 @@ class LiteAnalyticsTests(unittest.TestCase):
             100 * math.exp(0.02),
         ]
         self.assertAlmostEqual(
-            realized_volatility(prices).value, 0.025166114784235832 * math.sqrt(252)
+            realized_volatility(prices).value, 0.025166114784235832 * math.sqrt(245.0)
         )
         self.assertAlmostEqual(
-            expected_move(2500, 0.16, 3).value, 2500 * 0.16 * math.sqrt(3 / 252)
+            expected_move(2500, 0.16, 3).value, 2500 * 0.16 * math.sqrt(3 / 245.0)
         )
         lower, upper = probability_band(2500, 0.16, 3, 1.5)
-        width = 1.5 * 2500 * 0.16 * math.sqrt(3 / 252)
+        width = 1.5 * 2500 * 0.16 * math.sqrt(3 / 245.0)
         self.assertAlmostEqual(lower, 2500 - width)
         self.assertAlmostEqual(upper, 2500 + width)
         half_lower, half_upper = probability_band(2500, 0.16, 3, 0.5)

@@ -25,6 +25,7 @@ from ta35_dashboard.analytics import (
     recommend_strategy,
     yang_zhang_volatility,
 )
+from ta35_dashboard.config import TRADING_DAYS_PER_YEAR
 from ta35_dashboard.storage import SQLiteRepository
 
 BACKTEST_HORIZONS = (3, 7, 14, 30)
@@ -189,7 +190,7 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     for window in (5, 20, 60):
         # Population volatility keeps short and long windows on the same scale.
         # ddof=1 creates a material small-window bias (especially at h=3).
-        ta[f"rv_{window}"] = returns.rolling(window).std(ddof=0) * math.sqrt(252)
+        ta[f"rv_{window}"] = returns.rolling(window).std(ddof=0) * math.sqrt(TRADING_DAYS_PER_YEAR)
 
     ewma_values = np.full(len(ta), np.nan)
     yz_values = np.full(len(ta), np.nan)
@@ -253,7 +254,7 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
         / (close.rolling(20).max() - close.rolling(20).min())
     ).replace([np.inf, -np.inf], np.nan)
     ta["reversal_5_vol_scaled"] = (
-        -(log_price - log_price.shift(5)) / (ta["rv_20"] * math.sqrt(5 / 252))
+        -(log_price - log_price.shift(5)) / (ta["rv_20"] * math.sqrt(5 / TRADING_DAYS_PER_YEAR))
     ).replace([np.inf, -np.inf], np.nan)
 
     candidates = pd.concat(
@@ -262,7 +263,7 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     )
     ta["forecast_rv_3d"] = candidates.median(axis=1, skipna=True)
     ta["expected_move_3d_points"] = (
-        close * ta["forecast_rv_3d"] * math.sqrt(3 / 252)
+        close * ta["forecast_rv_3d"] * math.sqrt(3 / TRADING_DAYS_PER_YEAR)
     )
 
     vta = _bars_frame(repository, "VTA35")
@@ -349,18 +350,18 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
         for position, residual in enumerate(returns.fillna(0).to_numpy(dtype=float)):
             variance = omega + 0.06 * residual**2 + 0.08 * residual**2 * (residual < 0) + 0.86 * variance
             if position >= 30:
-                gjr_values[position] = math.sqrt(max(variance, 0) * 252)
+                gjr_values[position] = math.sqrt(max(variance, 0) * TRADING_DAYS_PER_YEAR)
     ta["gjr_rv_1d"] = gjr_values
 
     har_features = pd.DataFrame(
         {
             "const": 1.0,
-            "daily": np.log((returns.abs() * math.sqrt(252)).clip(lower=1e-6)),
+            "daily": np.log((returns.abs() * math.sqrt(TRADING_DAYS_PER_YEAR)).clip(lower=1e-6)),
             "weekly": np.log(
-                (returns.abs() * math.sqrt(252)).rolling(5).mean().clip(lower=1e-6)
+                (returns.abs() * math.sqrt(TRADING_DAYS_PER_YEAR)).rolling(5).mean().clip(lower=1e-6)
             ),
             "monthly": np.log(
-                (returns.abs() * math.sqrt(252)).rolling(22).mean().clip(lower=1e-6)
+                (returns.abs() * math.sqrt(TRADING_DAYS_PER_YEAR)).rolling(22).mean().clip(lower=1e-6)
             ),
         },
         index=ta.index,
@@ -368,6 +369,7 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     har_target = _outcomes(ta, 3)["forward_rv"]
     har_values = np.full(len(ta), np.nan)
     beta: np.ndarray | None = None
+    har_sigma2_resid: float = 0.0
     har_columns = ["const", "daily", "weekly", "monthly"]
     for position in range(123, len(ta)):
         # Refit weekly; between fits the last fully matured coefficient vector
@@ -380,16 +382,15 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
             )
             train = train.replace([np.inf, -np.inf], np.nan).dropna()
             if len(train) >= 80:
-                beta = np.linalg.lstsq(
-                    train[har_columns].to_numpy(),
-                    train["target"].to_numpy(),
-                    rcond=None,
-                )[0]
+                X_mat = train[har_columns].to_numpy()
+                y_vec = train["target"].to_numpy()
+                beta = np.linalg.lstsq(X_mat, y_vec, rcond=None)[0]
+                resids = y_vec - X_mat @ beta
+                har_sigma2_resid = float(np.var(resids, ddof=len(beta))) if len(resids) > len(beta) else 0.0
         current = har_features.iloc[position]
         if beta is not None and current[har_columns].notna().all():
-            har_values[position] = math.exp(
-                float(current[har_columns].to_numpy() @ beta)
-            )
+            log_pred = float(current[har_columns].to_numpy() @ beta)
+            har_values[position] = math.exp(log_pred + 0.5 * har_sigma2_resid)
     ta["har_rv_3d"] = har_values
     ta["matched_vrp_3d"] = (ta["vta35"] / 100) ** 2 - ta["har_rv_3d"] ** 2
 
@@ -454,7 +455,7 @@ def _outcomes(frame: pd.DataFrame, horizon: int) -> pd.DataFrame:
     for position in range(len(frame) - horizon):
         changes = np.diff(log_close[position : position + horizon + 1])
         if len(changes) >= 2:
-            forward_rv[position] = float(np.std(changes, ddof=0) * math.sqrt(252))
+            forward_rv[position] = float(np.std(changes, ddof=0) * math.sqrt(TRADING_DAYS_PER_YEAR))
     result["forward_rv"] = forward_rv
     result["volatility_direction"] = [
         (
@@ -513,7 +514,7 @@ def _strategy_success(
     forecast: float,
     horizon: int,
 ) -> tuple[bool, float] | None:
-    width = spot * forecast * math.sqrt(horizon / 252)
+    width = spot * forecast * math.sqrt(horizon / TRADING_DAYS_PER_YEAR)
     lower_half, upper_half = spot - 0.5 * width, spot + 0.5 * width
     lower, upper = spot - width, spot + width
     if name == "Bull Call Spread":

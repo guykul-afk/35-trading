@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import math
 import numpy as np
 
+from ta35_dashboard.config import TRADING_DAYS_PER_YEAR
 from ta35_dashboard.connectors.dde_parser import ParsedOptionChain
 
 
@@ -37,7 +38,7 @@ def calculate_chain_indicators(
         return ChainMetricsResult(None, None, None, None, None, None)
 
     F = chain.synthetic_spot or spot_price
-    T = max(0.001, chain.days_to_expiration / 365.0)
+    T = max(0.001, chain.days_to_expiration / TRADING_DAYS_PER_YEAR)
 
     # Filter valid quotes with IV
     valid_quotes = sorted(
@@ -55,7 +56,10 @@ def calculate_chain_indicators(
     # Find ATM index
     atm_idx = int(np.argmin(np.abs(strikes - F)))
     atm_quote = valid_quotes[atm_idx]
-    atm_iv = atm_quote.call_iv or atm_quote.put_iv or 0.15
+    atm_iv = atm_quote.call_iv or atm_quote.put_iv
+
+    if atm_iv is None or atm_iv <= 0:
+        return ChainMetricsResult(None, None, None, None, None, None)
 
     # Estimate 25-Delta strikes (~0.25 * F * IV * sqrt(T))
     std_dev = F * atm_iv * math.sqrt(T)
@@ -65,14 +69,13 @@ def calculate_chain_indicators(
     c_25d_q = min(valid_quotes, key=lambda q: abs(q.strike - c_25d_strike))
     p_25d_q = min(valid_quotes, key=lambda q: abs(q.strike - p_25d_strike))
 
-    c_25d_iv = c_25d_q.call_iv or atm_iv
-    p_25d_iv = p_25d_q.put_iv or atm_iv
+    c_25d_iv = c_25d_q.call_iv
+    p_25d_iv = p_25d_q.put_iv
 
-    rr_25d = c_25d_iv - p_25d_iv
-    fly_25d = (c_25d_iv + p_25d_iv) / 2.0 - atm_iv
+    rr_25d = (c_25d_iv - p_25d_iv) if (c_25d_iv is not None and p_25d_iv is not None) else None
+    fly_25d = ((c_25d_iv + p_25d_iv) / 2.0 - atm_iv) if (c_25d_iv is not None and p_25d_iv is not None) else None
 
-    # Bakshi-Kapadia-Madan (2003) Model-Free Implied Volatility & Skewness
-    # Out-of-the-money option prices grid
+    # Bakshi-Kapadia-Madan (2003) Model-Free Implied Volatility & Skewness/Kurtosis
     otm_prices = np.where(strikes > F, calls, puts)
     dK = np.gradient(strikes)
 
@@ -83,9 +86,12 @@ def calculate_chain_indicators(
     w_integrals = ((6.0 * np.log(strikes / F) - 3.0 * (np.log(strikes / F) ** 2)) / (strikes**2)) * otm_prices * dK
     bkm_w = float(np.sum(w_integrals))
 
+    x_integrals = ((12.0 * (np.log(strikes / F) ** 2) - 4.0 * (np.log(strikes / F) ** 3)) / (strikes**2)) * otm_prices * dK
+    bkm_x = float(np.sum(x_integrals))
+
     mfiv = math.sqrt(max(1e-6, bkm_var / T)) if bkm_var > 0 else atm_iv
-    bkm_skew = (bkm_w - 3.0 * (bkm_var**1.5)) / (max(1e-6, bkm_var**1.5)) if bkm_var > 0 else 0.0
-    bkm_kurt = 0.0
+    bkm_skew = (bkm_w - 3.0 * (bkm_var**1.5)) / (max(1e-6, bkm_var**1.5)) if bkm_var > 0 else None
+    bkm_kurt = (bkm_x - 4.0 * bkm_w * (bkm_var**0.5) + 6.0 * (bkm_var**2)) / (max(1e-6, bkm_var**2)) if bkm_var > 0 else None
 
     return ChainMetricsResult(
         atm_iv=atm_iv,

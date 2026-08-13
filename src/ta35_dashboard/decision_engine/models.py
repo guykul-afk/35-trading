@@ -122,7 +122,7 @@ class CandidateTrade:
     has_defined_risk: bool = True
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class TradeTicket:
     # 1. Decision
     verdict: Verdict
@@ -139,10 +139,10 @@ class TradeTicket:
     # 3. Execution
     limit_price: float
     net_debit_credit: float
-    quote_age_seconds: float
-    bid_ask_width: float
-    expected_slippage: float
-    fees_nis: float
+    quote_age_seconds: float | None = None
+    bid_ask_width: float | None = None
+    expected_slippage: float = 5.0
+    fees_nis: float = 0.0
     
     # 4. Forecast
     model_direction_probability: float
@@ -154,8 +154,8 @@ class TradeTicket:
     market_rnd_id: str
     market_pop: float
     market_iv: float
-    skew: float
-    term_structure: float
+    skew: float | None = None
+    term_structure: float | None = None
     
     # 6. Edge
     market_ev_after_costs: float
@@ -187,14 +187,14 @@ class TradeTicket:
     roll_policy: str
     
     # 10. Evidence & Audit
-    similar_cases: int
-    forward_track_record_winrate: float
-    strategy_fit: float
-    warnings: tuple[str, ...]
-    snapshot_id: str
-    model_version: str
-    rules_version: str
-    timestamp: str
+    similar_cases: int | None = None
+    forward_track_record_winrate: float | None = None
+    strategy_fit: float | None = None
+    warnings: tuple[str, ...] = ()
+    snapshot_id: str = ""
+    model_version: str = ""
+    rules_version: str = ""
+    timestamp: str = ""
 
 
 @dataclass(frozen=True, slots=True)
