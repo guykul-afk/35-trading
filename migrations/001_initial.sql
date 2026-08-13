@@ -54,7 +54,11 @@ CREATE TABLE IF NOT EXISTS chain_snapshots (
     put_last REAL,
     put_bid_size REAL,
     put_ask_size REAL,
-    put_iv REAL
+    put_iv REAL,
+    call_contract_id TEXT,
+    put_contract_id TEXT,
+    content_hash TEXT,
+    UNIQUE(content_hash, strike, expiration_label)
 );
 CREATE INDEX IF NOT EXISTS idx_chain_snapshots_ts_exp ON chain_snapshots(timestamp DESC, expiration_label);
 
