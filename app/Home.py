@@ -531,7 +531,7 @@ with tab_market:
                         "פעולה": "קנייה (Buy)" if leg.action == "Buy" else "מכירה (Sell)",
                         "סוג": leg.option_type,
                         "מחיר מימוש": leg.strike,
-                        "מחיר ביצוע (ש״ח)": f"{leg.exec_price * 100:,.0f} ש״ח",
+                        "מחיר ביצוע (ש״ח)": f"{leg.exec_price * 50:,.0f} ש״ח",
                         "מחיר בנקודות": f"{leg.exec_price:.2f} נק'",
                         "תיאור רגל": leg.label,
                     })

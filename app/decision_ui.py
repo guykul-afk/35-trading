@@ -28,8 +28,8 @@ def render_decision_hero(
 
 
 def render_trade_ticket_hero(ticket: TradeTicket) -> None:
-    """Renders full TradeTicket for FULL_DDE mode."""
-    mode_badge = ":green[⚡ FULL DDE MODE — EXECUTION READY]"
+    """Renders full TradeTicket for LIVE_EXECUTABLE / DDE mode."""
+    mode_badge = ":green[⚡ LIVE EXECUTABLE MODE — EXECUTION READY]"
     st.caption(mode_badge)
 
     verdict_color = "red" if ticket.verdict == Verdict.PASS else "green"
@@ -57,8 +57,8 @@ def render_trade_ticket_hero(ticket: TradeTicket) -> None:
         with exec_c1:
             st.subheader("מחיר ולימיט (Limit Price)")
             p_type = "Credit" if ticket.net_debit_credit < 0 else "Debit"
-            st.markdown(f"#### **Limit מומלץ:** `{abs(ticket.limit_price):.2f} ש״ח` ({p_type})")
-            st.caption(f"עמלות: {ticket.fees_nis:.1f} ש״ח | החלקה צפויה: {ticket.expected_slippage:.1f} ש״ח")
+            st.markdown(f"#### **Limit מומלץ:** `{abs(ticket.limit_price):.2f} נק'` ({abs(ticket.limit_price)*50:,.0f} ש״ח | {p_type})")
+            st.caption(f"עמלות: {ticket.fees_nis:.1f} ש״ח | החלקה צפויה: {ticket.expected_slippage:.1f} ש״ח | מכפיל: 50 ש״ח/נק׳")
         
         with exec_c2:
             st.subheader("סיכון וגודל פוזיציה (Risk & Size)")

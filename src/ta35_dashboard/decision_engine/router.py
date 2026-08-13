@@ -54,10 +54,10 @@ def determine_engine_mode(
                 
                 c_bid = getattr(q, "call_bid", 0) or 0
                 c_ask = getattr(q, "call_ask", 0) or 0
-                c_mid = getattr(q, "call_mid", 0) or 0
+                c_mid = getattr(q, "call_mid", 0) or getattr(q, "call_last", 0) or 0
                 p_bid = getattr(q, "put_bid", 0) or 0
                 p_ask = getattr(q, "put_ask", 0) or 0
-                p_mid = getattr(q, "put_mid", 0) or 0
+                p_mid = getattr(q, "put_mid", 0) or getattr(q, "put_last", 0) or 0
                 
                 has_live_call = c_bid > 0 and c_ask > c_bid and ((c_ask - c_bid) / c_bid) < 0.50
                 has_live_put = p_bid > 0 and p_ask > p_bid and ((p_ask - p_bid) / p_bid) < 0.50
@@ -74,13 +74,13 @@ def determine_engine_mode(
                 static_chains += 1
 
     if valid_chains > 0:
-        logger.info("Validated %d active live option chain(s). Mode: FULL_DDE", valid_chains)
-        return EngineMode.FULL_DDE, warnings
+        logger.info("Validated %d active live option chain(s). Mode: LIVE_EXECUTABLE", valid_chains)
+        return EngineMode.LIVE_EXECUTABLE, warnings
 
     if static_chains > 0:
-        logger.info("Validated %d static/pre-market option chain(s). Mode: FULL_DDE (Pre-Market / Mid Prices)", static_chains)
+        logger.info("Validated %d static/pre-market option chain(s). Mode: STATIC_CHAIN_RESEARCH", static_chains)
         warnings.append("DDE קבצים נטענו (טרום מסחר / ציטוטים סטטיים) — תמחור הרגליים מבוסס על מחירי אמצע/סגירה.")
-        return EngineMode.FULL_DDE, warnings
+        return EngineMode.STATIC_CHAIN_RESEARCH, warnings
 
-    warnings.append("Options chain files found but contain no usable strike price quotes. Switching to EOD Strategy Mode.")
-    return EngineMode.EOD_GENERAL, warnings
+    warnings.append("Options chain files found but contain no usable strike price quotes. Mode: RESEARCH_ONLY.")
+    return EngineMode.RESEARCH_ONLY, warnings

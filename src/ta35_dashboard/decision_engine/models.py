@@ -12,8 +12,12 @@ from typing import Any, Sequence
 
 
 class EngineMode(str, Enum):
-    FULL_DDE = "FULL_DDE"
+    LIVE_EXECUTABLE = "LIVE_EXECUTABLE"
+    RESEARCH_ONLY = "RESEARCH_ONLY"
+    STATIC_CHAIN_RESEARCH = "STATIC_CHAIN_RESEARCH"
     EOD_GENERAL = "EOD_GENERAL"
+    FULL_DDE = "LIVE_EXECUTABLE"
+
 
 
 class Verdict(str, Enum):

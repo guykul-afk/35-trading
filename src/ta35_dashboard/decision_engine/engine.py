@@ -62,7 +62,7 @@ def run_trade_decision_engine(
         direction_probability=prob_up,
         forecast_rv=forecast_rv,
         expected_move=spot_price * forecast_rv * math.sqrt(14.0 / TRADING_DAYS_PER_YEAR),
-        confidence=0.82 if 0.40 <= prob_up <= 0.60 else 0.88,
+        confidence=0.0 if prob_up == 0.50 else (0.82 if 0.40 <= prob_up <= 0.60 else 0.88),
         regime=regime,
     )
 
@@ -85,7 +85,7 @@ def run_trade_decision_engine(
             target_range = (round(spot_price, 1), round(spot_price + target_move, 1))
             inval_level = round(spot_price - target_move * 0.8, 1)
         elif prob_up <= 0.45:
-            target_range = (round(spot_price - target_move, 1), round(spot_price, 1))
+            target_range = (round(spot_price - target_move, 1), round(spot_price), 1)
             inval_level = round(spot_price + target_move * 0.8, 1)
         else:
             target_range = (round(spot_price - target_move * 0.7, 1), round(spot_price + target_move * 0.7, 1))
@@ -143,7 +143,7 @@ def run_trade_decision_engine(
         return rec
 
     # =========================================================================
-    # ROUTE 2: FULL DDE MODE (Valid option chains present)
+    # ROUTE 2: DDE OPTIONS CHAIN MODE (LIVE_EXECUTABLE, STATIC_CHAIN_RESEARCH, RESEARCH_ONLY)
     # =========================================================================
     all_candidates: list[tuple[CandidateTrade, float, float, float, float, float]] = []
     
@@ -158,7 +158,7 @@ def run_trade_decision_engine(
             )
             if passed:
                 score, coverage = calculate_opportunity_score(cand, mdl_ev, edge, mkt_pop, model_dist.confidence)
-                if coverage >= 0.6:  # Gate: Must have at least 60% of data (requires more than just Edge+Conf+Risk)
+                if coverage >= 1.0:  # Gate: Require 100% eligibility coverage
                     all_candidates.append((cand, score, mdl_ev, mkt_ev, edge, mkt_pop))
 
     # If no trade passed gates -> Output PASS TradeTicket
