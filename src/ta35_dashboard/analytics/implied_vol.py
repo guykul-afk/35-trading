@@ -13,6 +13,30 @@ import numpy as np
 
 from ta35_dashboard.connectors.dde_parser import ParsedOptionChain
 
+def calculate_forward_price_from_parity(
+    chain: ParsedOptionChain, r: float = 0.0, fallback_spot: float | None = None
+) -> float | None:
+    """Calculate forward price using Put-Call parity from ATM options."""
+    if not chain.quotes:
+        return fallback_spot
+
+    T = max(0.001, chain.days_to_expiration / 365.0)
+    
+    valid_pairs = []
+    for q in chain.quotes:
+        if q.call_mid is not None and q.put_mid is not None and q.call_mid > 0 and q.put_mid > 0:
+            valid_pairs.append(q)
+            
+    if not valid_pairs:
+        return fallback_spot
+        
+    valid_pairs.sort(key=lambda q: abs(q.call_mid - q.put_mid))
+    q_atm = valid_pairs[0]
+    
+    forward = q_atm.strike + (q_atm.call_mid - q_atm.put_mid) * math.exp(r * T)
+    return forward
+
+
 
 @dataclass(frozen=True, slots=True)
 class HorizonExpectation:
@@ -139,7 +163,8 @@ def calculate_term_structure_expectations(
     # Resolve ATM IV and expiration T for each chain
     points = []
     for c in active_chains:
-        iv = extract_atm_implied_volatility(c, spot_price)
+        forward_price = calculate_forward_price_from_parity(c, fallback_spot=spot_price)
+        iv = extract_atm_implied_volatility(c, forward_price if forward_price else spot_price)
         if iv is not None:
             T = max(0.001, c.days_to_expiration / 365.0)
             points.append((T, iv, c.days_to_expiration))
@@ -175,7 +200,10 @@ def calculate_term_structure_expectations(
             var1 = (iv1**2) * t1
             var2 = (iv2**2) * t2
             
-            # Interpolate variance linearly in time
+            # Enforce positive forward variance (no calendar arbitrage)
+            var2 = max(var2, var1 + 1e-6)
+            
+            # Interpolate variance linearly in time (Total Variance relying on Forward Variance)
             var_h = var1 + (var2 - var1) * (T_h - t1) / (t2 - t1)
             iv_h = math.sqrt(max(0.0001, var_h / T_h))
 
