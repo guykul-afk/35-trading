@@ -366,33 +366,38 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
         },
         index=ta.index,
     )
-    har_target = _outcomes(ta, 3)["forward_rv"]
-    har_values = np.full(len(ta), np.nan)
-    beta: np.ndarray | None = None
-    har_sigma2_resid: float = 0.0
-    har_columns = ["const", "daily", "weekly", "monthly"]
-    for position in range(123, len(ta)):
-        # Refit weekly; between fits the last fully matured coefficient vector
-        # remains a valid, deliberately stale OOS forecast.
-        if beta is None or position % 5 == 0:
-            train_end = position - 3
-            train = har_features.iloc[: train_end + 1].copy()
-            train["target"] = np.log(
-                har_target.iloc[: train_end + 1].clip(lower=1e-6)
-            )
-            train = train.replace([np.inf, -np.inf], np.nan).dropna()
-            if len(train) >= 80:
-                X_mat = train[har_columns].to_numpy()
-                y_vec = train["target"].to_numpy()
-                beta = np.linalg.lstsq(X_mat, y_vec, rcond=None)[0]
-                resids = y_vec - X_mat @ beta
-                har_sigma2_resid = float(np.var(resids, ddof=len(beta))) if len(resids) > len(beta) else 0.0
-        current = har_features.iloc[position]
-        if beta is not None and current[har_columns].notna().all():
-            log_pred = float(current[har_columns].to_numpy() @ beta)
-            har_values[position] = math.exp(log_pred + 0.5 * har_sigma2_resid)
-    ta["har_rv_3d"] = har_values
-    ta["matched_vrp_3d"] = (ta["vta35"] / 100) ** 2 - ta["har_rv_3d"] ** 2
+    for horizon in BACKTEST_HORIZONS:
+        har_target = _outcomes(ta, horizon)["forward_rv"]
+        har_values = np.full(len(ta), np.nan)
+        beta: np.ndarray | None = None
+        har_sigma2_resid: float = 0.0
+        har_columns = ["const", "daily", "weekly", "monthly"]
+        for position in range(123, len(ta)):
+            if beta is None or position % 5 == 0:
+                train_end = position - horizon
+                train = har_features.iloc[: train_end + 1].copy()
+                train["target"] = np.log(
+                    har_target.iloc[: train_end + 1].clip(lower=1e-6)
+                )
+                train = train.replace([np.inf, -np.inf], np.nan).dropna()
+                if len(train) >= 80:
+                    X_mat = train[har_columns].to_numpy()
+                    y_vec = train["target"].to_numpy()
+                    beta = np.linalg.lstsq(X_mat, y_vec, rcond=None)[0]
+                    resids = y_vec - X_mat @ beta
+                    har_sigma2_resid = float(np.var(resids, ddof=len(beta))) if len(resids) > len(beta) else 0.0
+            current = har_features.iloc[position]
+            if beta is not None and current[har_columns].notna().all():
+                log_pred = float(current[har_columns].to_numpy() @ beta)
+                har_values[position] = math.exp(log_pred + 0.5 * har_sigma2_resid)
+        ta[f"har_rv_{horizon}d"] = har_values
+        ta[f"matched_vrp_{horizon}d"] = (ta["vta35"] / 100) ** 2 - ta[f"har_rv_{horizon}d"] ** 2
+
+        # In absence of other horizon-specific models, use the base forecast candidates for median
+        ta[f"forecast_rv_{horizon}d"] = candidates.median(axis=1, skipna=True)
+        ta[f"expected_move_{horizon}d_points"] = (
+            close * ta[f"forecast_rv_{horizon}d"] * math.sqrt(horizon / TRADING_DAYS_PER_YEAR)
+        )
 
     vol_inputs = pd.DataFrame(
         {
