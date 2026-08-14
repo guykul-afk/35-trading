@@ -48,7 +48,7 @@ def render_trade_ticket_hero(ticket: TradeTicket) -> None:
 
         if ticket.verdict == Verdict.PASS:
             st.warning(f"**סיבת PASS:** {ticket.no_trade_reason}")
-            return
+            st.info("מציג את האסטרטגיה הקרובה ביותר לסף ההמלצה:")
 
         st.markdown("---")
 

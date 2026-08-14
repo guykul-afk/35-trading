@@ -13,3 +13,5 @@ downloads/*.csv
 scratch/
 .DS_Store
 dde_sync.log
+*.pkl
+data/dde_archive/

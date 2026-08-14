@@ -147,6 +147,9 @@ def run_trade_decision_engine(
     # =========================================================================
     all_candidates: list[tuple[CandidateTrade, float, float, float, float, float]] = []
     
+    best_rejected_candidate: tuple[CandidateTrade, float, float, float, float, float] | None = None
+    highest_rejected_score = -1.0
+    
     for chain in (parsed_chains or []):
         cand_list = generate_candidate_trades(chain, spot_price, model_dist)
         for cand in cand_list:
@@ -156,28 +159,49 @@ def run_trade_decision_engine(
             passed, rej_reason = apply_quality_gates(
                 cand, mdl_ev, edge, risk_budget_nis=risk_budget_nis
             )
-            if passed:
-                score, coverage = calculate_opportunity_score(cand, mdl_ev, edge, mkt_pop, model_dist.confidence)
-                if coverage >= 1.0:  # Gate: Require 100% eligibility coverage
-                    all_candidates.append((cand, score, mdl_ev, mkt_ev, edge, mkt_pop))
+            score, coverage = calculate_opportunity_score(cand, mdl_ev, edge, mkt_pop, model_dist.confidence)
+            
+            cand_tuple = (cand, score, mdl_ev, mkt_ev, edge, mkt_pop)
+            if passed and coverage >= 1.0:  # Gate: Require 100% eligibility coverage
+                all_candidates.append(cand_tuple)
+            else:
+                if score > highest_rejected_score:
+                    highest_rejected_score = score
+                    best_rejected_candidate = cand_tuple
 
     # If no trade passed gates -> Output PASS TradeTicket
     if not all_candidates:
-        default_expiry = Expiry(
-            expiration_date=getattr(parsed_chains[0], "expiration_label", "Standard"),
-            days_to_expiration=float(getattr(parsed_chains[0], "days_to_expiration", 14.0)),
-        ) if parsed_chains else Expiry("N/A", 14.0)
+        if best_rejected_candidate:
+            best_cand, best_score, best_mdl_ev, best_mkt_ev, best_edge, best_mkt_pop = best_rejected_candidate
+            default_expiry = best_cand.expiry
+            fam = best_cand.strategy_family
+            variant = best_cand.strategy_variant
+            legs = best_cand.legs
+            limit = best_cand.limit_price
+            net_dc = best_cand.net_debit_credit
+            score_to_show = best_score
+        else:
+            default_expiry = Expiry(
+                expiration_date=getattr(parsed_chains[0], "expiration_label", "Standard"),
+                days_to_expiration=float(getattr(parsed_chains[0], "days_to_expiration", 14.0)),
+            ) if parsed_chains else Expiry("N/A", 14.0)
+            fam = StrategyFamily.LONG_BUTTERFLY
+            variant = "No Trade Pass"
+            legs = ()
+            limit = 0.0
+            net_dc = 0.0
+            score_to_show = 0.0
         
         pass_ticket = TradeTicket(
             verdict=Verdict.PASS,
-            opportunity_score=0.0,
+            opportunity_score=score_to_show,
             no_trade_reason="שום מבנה לא עבר את שערי האיכות (חסר Edge מספיק לאחר עלויות או חריגת סיכון)",
             horizon_days=14,
             expiry=default_expiry,
-            strategy_family=StrategyFamily.LONG_BUTTERFLY,
-            strategy_variant="No Trade Pass",
-            legs=(),
-            limit_price=0.0,
+            strategy_family=fam,
+            strategy_variant=variant,
+            legs=legs,
+            limit_price=limit,
             net_debit_credit=0.0,
             quote_age_seconds=10.0,
             bid_ask_width=0.0,

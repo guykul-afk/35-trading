@@ -16,7 +16,11 @@ from ta35_dashboard.config import PROJECT_ROOT, SETTINGS
 from ta35_dashboard.decision_engine import StrategyRecommendation, TradeTicket
 from ta35_dashboard.decision_engine.engine import run_trade_decision_engine
 from ta35_dashboard.services import import_tase_uploads
-from ta35_dashboard.services.dde_service import analyze_dde_options_data
+from ta35_dashboard.services.dde_service import (
+    analyze_dde_options_data,
+    ensure_background_worker,
+    get_cached_dde_analysis,
+)
 
 from ta35_dashboard.analytics.shortterm_strategies import (
     build_shortterm_payoff_fan_chart,
@@ -24,6 +28,9 @@ from ta35_dashboard.analytics.shortterm_strategies import (
 )
 
 data = bundle()
+
+# Ensure background DDE processing thread is active
+ensure_background_worker()
 
 from ta35_dashboard.analytics.forecasting import predict_live_direction
 
@@ -47,10 +54,11 @@ if uploaded_dde:
                 pass
         st.session_state["last_processed_upload_sig"] = upload_sig
 
-dde_result = analyze_dde_options_data(
+dde_result = get_cached_dde_analysis(
     spot_override=last_close_val_init,
     prob_rise=latest_prob_init,
 )
+
 
 # Run Trade Decision Engine
 decision_result = run_trade_decision_engine(
@@ -64,21 +72,7 @@ decision_result = run_trade_decision_engine(
     parsed_chains=dde_result.chains if dde_result and dde_result.chains else None,
 )
 
-st.markdown(
-    """
-    <style>
-    /* Prevent Streamlit graying out / translucent fade during rerun */
-    .stApp [data-testid="stMainBlockContainer"],
-    .stApp [data-testid="stAppViewBlockContainer"],
-    div[class*="st-emotion-cache"] {
-        opacity: 1 !important;
-        filter: none !important;
-        transition: opacity 0s !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+
 
 # Compute fingerprint/signature of new decision result
 new_sig = f"{type(decision_result).__name__}_{getattr(decision_result, 'verdict', 'NONE')}_{getattr(decision_result, 'strategy_family', getattr(decision_result, 'primary_strategy_family', 'NONE'))}_{getattr(decision_result, 'opportunity_score', 0.0):.1f}_{getattr(decision_result, 'limit_price', 0.0):.1f}"
@@ -630,10 +624,7 @@ with tab_research:
         )
     )
 
-    st_dde_res = analyze_dde_options_data(
-        spot_override=last_close_val,
-        prob_rise=latest_prob_init,
-    )
+    st_dde_res = dde_result
 
     if st_dde_res.weekly_chain or st_dde_res.monthly_chain:
         exp_h = st_dde_res.expectations.get(st_horizon)
@@ -957,11 +948,50 @@ with tab_research:
 # TAB 4: DATA & HEALTH — עדכון נתונים ובריאות המערכת
 # -----------------------------------------------------------------------------
 with tab_data:
-    st.subheader("⚙️ עדכון נתונים וסנכרון כל סדרות המערכת")
-    st.write(
-        "העלאת קובץ ת״א־35 מעדכנת את נתוני הבורסה בת״א ומסנכרנת אוטומטית את כל מקורות המידע במערכת: "
-        "ת״א־35, VTA35, מדדי VIX מארה״ב (Cboe) ושער דולר (USD/ILS)."
-    )
+    col_head_title, col_head_reset = st.columns([2.5, 1.0])
+    with col_head_title:
+        st.subheader("⚙️ עדכון נתונים וסנכרון כל סדרות המערכת")
+        st.write(
+            "העלאת קובץ ת״א־35 מעדכנת את נתוני הבורסה בת״א ומסנכרנת אוטומטית את כל מקורות המידע במערכת: "
+            "ת״א־35, VTA35, מדדי VIX מארה״ב (Cboe) ושער דולר (USD/ILS)."
+        )
+    with col_head_reset:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🗑️ אתחול נתונים", type="secondary", width="stretch", help="מחיקת קבצי DDE שוטפים ואיפוס זיכרון מטמון לצורך העלאת קבצים חדשים וחישוב מחדש (ללא פגיעה בארכיון ההיסטורי)"):
+            dde_dir = PROJECT_ROOT / "DDE"
+            if dde_dir.exists():
+                for f in dde_dir.glob("*"):
+                    if f.is_file():
+                        try:
+                            f.unlink()
+                        except Exception:
+                            pass
+            downloads_dir = PROJECT_ROOT / "downloads"
+            if downloads_dir.exists():
+                for f in downloads_dir.glob("*.csv"):
+                    if f.is_file():
+                        try:
+                            f.unlink()
+                        except Exception:
+                            pass
+            cache_file = PROJECT_ROOT / "data" / "latest_dde_analysis.pkl"
+            if cache_file.exists():
+                try:
+                    cache_file.unlink()
+                except Exception:
+                    pass
+            st.cache_data.clear()
+            for key in [
+                "last_processed_upload_sig",
+                "last_notified_upload_sig",
+                "active_displayed_signature",
+                "displayed_decision_result",
+            ]:
+                st.session_state.pop(key, None)
+            st.toast("✅ כל קבצי ה-DDE והנתונים השוטפים אופסו בהצלחה!")
+            time.sleep(0.3)
+            st.rerun()
+
     link_left, link_right = st.columns(2)
     link_left.link_button(
         "הורדת ת״א־35 מאתר הבורסה",
@@ -1025,29 +1055,49 @@ with tab_data:
     st.markdown("---")
     st.subheader("⚡ העלאת וסריקת קבצי אופציות בזמן אמת (DDE)")
     
-    col_up_dde, col_ref_dde = st.columns([1.5, 1.0])
+    col_up_dde, col_ref_dde = st.columns([1.4, 1.1])
     with col_up_dde:
         uploaded_dde = st.file_uploader(
             "העלאת קבצי DDE/אופציות מעודכנים (UTF-16LE / TSV / CSV)",
             type=["txt", "csv", "tsv"],
             accept_multiple_files=True,
-            help="ניתן להעלות קבצים מעודכנים כאן או לשמור קבצי DDE בתיקיית הפרויקט. המערכת מזהה וסורקת אותם אוטומטית.",
+            help="ניתן להעלות קבצים מעודכנים כאן או לשמור קבצי DDE בתיקיית הפרויקט. מנוע הרקע סורק ומחשב אותם אוטומטית.",
             key="dde_file_uploader",
         )
     with col_ref_dde:
-        st.markdown("<br>", unsafe_allow_html=True)
-        dde_auto_15s = st.checkbox("🔄 רענון אוטומטי של המערכת כל 15 שניות", value=False, key="dde_auto_refresh_15s")
+        auto_refresh_choice = st.selectbox(
+            "🔄 רענון תצוגת דשבורד אוטומטי:",
+            options=[0, 15, 60, 300],
+            format_func=lambda s: "כבוי (ידני בלבד)" if s == 0 else (f"כל {s} שניות" if s < 60 else f"כל {s//60} דקות"),
+            index=3, # default to every 5 minutes (300s)
+            key="dashboard_auto_refresh_interval",
+            help="רענון אוטומטי של הממשק ששואב את הנתונים המחושבים ממנוע הרקע ללא תקיעת ממשק.",
+        )
 
     if uploaded_dde:
         # Saving is now handled at the top of the script
         upload_sig = "_".join(getattr(uf, 'file_id', '') for uf in uploaded_dde)
         if st.session_state.get("last_notified_upload_sig") != upload_sig:
-            st.success(f"📥 נקלטו ונשמרו {len(uploaded_dde)} קבצי DDE חדשים בתיקיית DDE בהצלחה!")
+            st.success(f"📥 נקלטו ונשמרו {len(uploaded_dde)} קבצי DDE חדשים בתיקיית DDE בהצלחה! מנוע הרקע מעבד אותם מיידית.")
             st.session_state["last_notified_upload_sig"] = upload_sig
 
-    if dde_auto_15s:
-        time.sleep(15)
-        st.rerun()
+    if auto_refresh_choice > 0:
+        import streamlit.components.v1 as components
+        refresh_ms = auto_refresh_choice * 1000
+        components.html(
+            f"""
+            <script>
+            if (!window.__autoRefreshTimer) {{
+                window.__autoRefreshTimer = setTimeout(function() {{
+                    window.__autoRefreshTimer = null;
+                    window.parent.location.reload();
+                }}, {refresh_ms});
+            }}
+            </script>
+            """,
+            height=0,
+            width=0,
+        )
 
     if 'dde_result' in locals() and dde_result and dde_result.source_files:
         import datetime

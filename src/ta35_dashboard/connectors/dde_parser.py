@@ -172,6 +172,7 @@ def parse_tase_dde_file(
                     return i
         return -1
         
+    col_map = {
         "put_bid_sz": find_col("כ.ביקוש", "put"),
         "put_bid": find_col("ביקוש", "put"),
         "put_last": find_col("שער אחרון", "put"),

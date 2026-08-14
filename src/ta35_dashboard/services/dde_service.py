@@ -10,7 +10,10 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 from pathlib import Path
+import pickle
 import tempfile
+import threading
+import time
 from typing import Any, Sequence
 
 from ta35_dashboard.analytics.implied_vol import (
@@ -28,6 +31,9 @@ from ta35_dashboard.connectors.dde_parser import ParsedOptionChain, parse_tase_d
 from ta35_dashboard.storage.repository import SQLiteRepository
 
 logger = logging.getLogger(__name__)
+
+CACHE_FILE_NAME = "latest_dde_analysis.pkl"
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,3 +248,102 @@ def analyze_dde_options_data(
         last_modified_str=last_mod_str,
         chains=tuple(final_chains),
     )
+
+
+def save_dde_analysis_cache(result: DDEAnalysisResult, project_root: str | Path = PROJECT_ROOT) -> None:
+    """Save DDE analysis result to disk cache atomically."""
+    cache_path = Path(project_root) / "data" / CACHE_FILE_NAME
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = cache_path.with_suffix(".tmp")
+    try:
+        with open(temp_path, "wb") as f:
+            pickle.dump(result, f, protocol=pickle.HIGHEST_PROTOCOL)
+        temp_path.replace(cache_path)
+    except Exception as e:
+        logger.error("Failed to save DDE analysis cache: %s", e)
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+
+def get_cached_dde_analysis(
+    project_root: str | Path = PROJECT_ROOT,
+    spot_override: float | None = None,
+    prob_rise: float = 0.50,
+) -> DDEAnalysisResult:
+    """Read pre-calculated DDE analysis result from cache, or calculate once if missing."""
+    cache_path = Path(project_root) / "data" / CACHE_FILE_NAME
+    if cache_path.exists():
+        try:
+            with open(cache_path, "rb") as f:
+                res = pickle.load(f)
+                if isinstance(res, DDEAnalysisResult):
+                    return res
+        except Exception as e:
+            logger.warning("Could not read DDE cache file: %s", e)
+
+    # If no cache exists, run analysis once and save cache
+    res = analyze_dde_options_data(
+        project_root=project_root,
+        spot_override=spot_override,
+        prob_rise=prob_rise,
+    )
+    save_dde_analysis_cache(res, project_root=project_root)
+    return res
+
+
+_worker_thread: threading.Thread | None = None
+_worker_running: bool = False
+
+
+def ensure_background_worker(project_root: str | Path = PROJECT_ROOT) -> None:
+    """Ensure in-process background DDE monitoring thread is running."""
+    global _worker_thread, _worker_running
+    if _worker_thread is not None and _worker_thread.is_alive():
+        return
+    _worker_running = True
+    _worker_thread = threading.Thread(
+        target=_background_worker_loop,
+        args=(project_root,),
+        daemon=True,
+        name="DDEBackgroundWorkerThread",
+    )
+    _worker_thread.start()
+    logger.info("DDE in-process background worker started.")
+
+
+def _background_worker_loop(project_root: str | Path = PROJECT_ROOT, poll_interval_sec: float = 5.0) -> None:
+    """Background monitoring loop that detects new DDE files and updates the cache."""
+    root_path = Path(project_root)
+    last_processed_mtime: float = 0.0
+    logger.info("Background DDE worker loop active on directory: %s", root_path)
+
+    while True:
+        try:
+            candidate_paths = []
+            for ext in ["*.txt", "*.csv", "*.tsv"]:
+                candidate_paths.extend(root_path.glob(ext))
+                candidate_paths.extend((root_path / "DDE").glob(ext))
+                candidate_paths.extend((root_path / "downloads").glob(ext))
+                candidate_paths.extend((root_path / "data").glob(ext))
+
+            current_max_mtime = 0.0
+            for p in set(candidate_paths):
+                name_lower = p.name.lower()
+                if any(k in name_lower for k in ("נגזרים", "option", "dde", "שבועית", "יומית", "אוגוסט", "ספטמבר", "אוקטובר")):
+                    try:
+                        current_max_mtime = max(current_max_mtime, p.stat().st_mtime)
+                    except OSError:
+                        pass
+
+            cache_path = root_path / "data" / CACHE_FILE_NAME
+            cache_exists = cache_path.exists()
+
+            if current_max_mtime > last_processed_mtime or not cache_exists:
+                res = analyze_dde_options_data(project_root=root_path)
+                save_dde_analysis_cache(res, project_root=root_path)
+                last_processed_mtime = max(current_max_mtime, time.time())
+                logger.info("Background DDE Worker: analyzed %d chains, cache updated at %s.", len(res.chains), res.last_modified_str)
+        except Exception as e:
+            logger.error("Error in background DDE worker loop: %s", e)
+
+        time.sleep(poll_interval_sec)
