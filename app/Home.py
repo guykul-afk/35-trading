@@ -52,6 +52,19 @@ if uploaded_dde:
                     f_out.write(uf.getvalue())
             except Exception:
                 pass
+        
+        # Trigger immediate synchronous processing so the UI updates right away
+        try:
+            from ta35_dashboard.services.dde_service import save_dde_analysis_cache
+            immediate_res = analyze_dde_options_data(
+                project_root=PROJECT_ROOT,
+                spot_override=last_close_val_init,
+                prob_rise=latest_prob_init,
+            )
+            save_dde_analysis_cache(immediate_res, project_root=PROJECT_ROOT)
+        except Exception as e:
+            st.error(f"Error processing uploaded DDE files: {e}")
+            
         st.session_state["last_processed_upload_sig"] = upload_sig
 
 dde_result = get_cached_dde_analysis(
