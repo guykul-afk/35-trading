@@ -744,9 +744,14 @@ with tab_research:
                         query_key = f"expected_move_{strength_horizon}d_points"
                         card_label = f"טווח {strength_horizon} ימים"
                         if last_close_val is not None and data.forecast_volatility is not None:
+                            if hasattr(data, "raw_metrics") and query_key in data.raw_metrics:
+                            card_val = data.raw_metrics[query_key]
+                        elif last_close_val is not None and data.forecast_volatility is not None:
                             card_val = last_close_val * data.forecast_volatility * math.sqrt(strength_horizon / 252.0)
                     else:
                         query_key = query_key.replace("_3d", f"_{strength_horizon}d")
+                        if hasattr(data, "raw_metrics") and query_key in data.raw_metrics:
+                            card_val = data.raw_metrics[query_key]
                         if "forecast_rv" in query_key:
                             card_label = f"תחזית RV ל־{strength_horizon} ימים"
                         elif "har_rv" in query_key:
