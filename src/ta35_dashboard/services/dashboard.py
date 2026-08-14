@@ -91,6 +91,7 @@ class DashboardBundle:
     context_ablation: tuple[dict[str, object], ...]
     family_probabilities: tuple[dict[str, object], ...]
     volatility_model_comparison: tuple[dict[str, object], ...]
+    raw_metrics: dict[str, float | None]
 
 
 CARD_DEFINITIONS = (
@@ -601,4 +602,5 @@ def load_dashboard_bundle(
             if volatility_models is not None and not volatility_models.empty
             else ()
         ),
+        raw_metrics={k: v.value for k, v in metrics.items()}
     )

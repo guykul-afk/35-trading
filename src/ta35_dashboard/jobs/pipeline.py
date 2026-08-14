@@ -142,23 +142,30 @@ def compute_latest_metrics(
         atr_acceleration,
         () if atr_acceleration is not None else ("missing_ohlc_or_history",),
     )
-    har = har_eod_forecast(closes, horizon=3)
+    for horizon in (3, 7, 14, 30):
+        har = har_eod_forecast(closes, horizon=horizon)
+        if horizon == 3:
+            add(f"har_rv_{horizon}d", har.value, har.quality_flags, proxy="EOD", status="research")
+        else:
+            add(f"har_rv_{horizon}d", har.value, har.quality_flags, proxy="EOD")
+        
+        candidates = [
+            value for value in (rv[5], rv[20], ewma.value, yz.value) if value is not None
+        ]
+        if har.value is not None:
+            candidates.append(har.value)
+        forecast = median(candidates) if candidates else None
+        add(f"forecast_rv_{horizon}d", forecast)
+        
+        move = expected_move(closes[-1], forecast, horizon) if forecast is not None else None
+        add(
+            f"expected_move_{horizon}d_points",
+            move.value if move else None,
+            move.quality_flags if move else ("missing_forecast",),
+        )
+
     gjr = gjr_eod_forecast(returns[-252:])
-    add("har_rv_3d", har.value, har.quality_flags, proxy="EOD", status="research")
     add("gjr_rv_1d", gjr.value, gjr.quality_flags, proxy="fixed_parameter_EOD", status="benchmark")
-    candidates = [
-        value for value in (rv[5], rv[20], ewma.value, yz.value) if value is not None
-    ]
-    if har.value is not None:
-        candidates.append(har.value)
-    forecast = median(candidates) if candidates else None
-    add("forecast_rv_3d", forecast)
-    move = expected_move(closes[-1], forecast, 3) if forecast is not None else None
-    add(
-        "expected_move_3d_points",
-        move.value if move else None,
-        move.quality_flags if move else ("missing_forecast",),
-    )
 
     vta = repository.bar_history("VTA35", 756)
     vta_values = [bar.close for bar in vta]
