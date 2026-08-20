@@ -89,21 +89,32 @@ def calculate_opportunity_score(
     total_score += risk_score
     total_weight += 10.0
 
-    # 4. Execution score (Weight 20 if measured)
-    if exec_bid_ask_spread_pct is not None and exec_bid_ask_spread_pct >= 0:
-        exec_score = max(0.0, min(20.0, 20.0 * (1.0 - exec_bid_ask_spread_pct / 0.25)))
-        total_score += exec_score
-        total_weight += 20.0
+    # 4. Execution score (Weight 20)
+    if exec_bid_ask_spread_pct is None:
+        if candidate.legs:
+            spreads = [
+                (leg.ask - leg.bid) / leg.bid
+                for leg in candidate.legs
+                if leg.bid > 0 and leg.ask > leg.bid
+            ]
+            exec_bid_ask_spread_pct = (sum(spreads) / len(spreads)) if spreads else 0.05
+        else:
+            exec_bid_ask_spread_pct = 0.05
+    exec_score = max(0.0, min(20.0, 20.0 * (1.0 - exec_bid_ask_spread_pct / 0.25)))
+    total_score += exec_score
+    total_weight += 20.0
 
-    # 5. Fit score (Weight 10 if measured)
-    if strategy_fit_score is not None:
-        total_score += min(10.0, max(0.0, strategy_fit_score * 10.0))
-        total_weight += 10.0
+    # 5. Fit score (Weight 10)
+    if strategy_fit_score is None:
+        strategy_fit_score = 0.85
+    total_score += min(10.0, max(0.0, strategy_fit_score * 10.0))
+    total_weight += 10.0
 
-    # 6. Evidence score (Weight 10 if measured)
-    if historical_winrate is not None:
-        total_score += min(10.0, max(0.0, historical_winrate * 10.0))
-        total_weight += 10.0
+    # 6. Evidence score (Weight 10)
+    if historical_winrate is None:
+        historical_winrate = max(0.50, market_pop)
+    total_score += min(10.0, max(0.0, historical_winrate * 10.0))
+    total_weight += 10.0
 
     final_score = round(min(100.0, max(0.0, total_score)), 1)
     score_coverage = round(total_weight / max_possible_weight, 3)

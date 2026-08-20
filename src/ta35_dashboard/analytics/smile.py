@@ -79,3 +79,81 @@ def fit_svi_smile(
                             best_params = params
 
     return best_params
+
+
+def _norm_cdf_svi(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+def svi_risk_neutral_density(params: SVIParams, k: float, forward: float) -> float:
+    """
+    Calculate the Risk-Neutral Density (Q) from SVI parameters using Breeden-Litzenberger.
+    Returns the PDF value at the given log-moneyness k.
+    """
+    if not params.is_arbitrage_free:
+        return 0.0
+    
+    eps = 1e-4
+    
+    def call_k(k_val):
+        w = params.total_variance(k_val)
+        iv = math.sqrt(w / max(0.001, params.t_exp))
+        K_val = forward * math.exp(k_val)
+        d1 = (math.log(forward / K_val) + 0.5 * iv**2 * params.t_exp) / (iv * math.sqrt(params.t_exp))
+        d2 = d1 - iv * math.sqrt(params.t_exp)
+        return forward * _norm_cdf_svi(d1) - K_val * _norm_cdf_svi(d2)
+        
+    K = forward * math.exp(k)
+    k_plus = math.log((K + eps) / forward)
+    k_minus = math.log((K - eps) / forward)
+    k_current = math.log(K / forward)
+    
+    c_plus = call_k(k_plus)
+    c_minus = call_k(k_minus)
+    c_current = call_k(k_current)
+    
+    d2c_dk2 = (c_plus - 2*c_current + c_minus) / (eps**2)
+    pdf_K = max(0.0, d2c_dk2)
+    return pdf_K * K
+
+
+def physical_density_from_risk_neutral(q_pdf: float, log_return: float, risk_premium: float = 0.05, volatility: float = 0.15) -> float:
+    """
+    Convert Risk-Neutral Density (Q) to Physical Distribution (P) 
+    using a simple risk premium adjustment.
+    """
+    adjustment = math.exp((risk_premium / max(1e-4, volatility**2)) * log_return)
+    return q_pdf * adjustment
+
+
+def bkm_model_free_implied_variance(
+    strikes: np.ndarray,
+    call_prices: np.ndarray,
+    put_prices: np.ndarray,
+    forward: float,
+    r: float,
+    t_exp: float
+) -> float:
+    """
+    Calculate model-free implied variance using Bakshi-Kapadia-Madan (BKM) approach.
+    """
+    if len(strikes) < 3 or t_exp <= 0:
+        return 0.0
+        
+    idx = np.argsort(strikes)
+    K = strikes[idx]
+    C = call_prices[idx]
+    P = put_prices[idx]
+    
+    dK = np.zeros_like(K)
+    dK[0] = K[1] - K[0]
+    dK[-1] = K[-1] - K[-2]
+    dK[1:-1] = (K[2:] - K[:-2]) / 2.0
+    
+    variance = 0.0
+    for i in range(len(K)):
+        strike = K[i]
+        price = C[i] if strike > forward else P[i]
+        weight = dK[i] / (strike**2)
+        variance += price * weight
+        
+    return 2.0 * math.exp(r * t_exp) * variance / t_exp

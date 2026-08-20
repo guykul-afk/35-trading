@@ -1,7 +1,7 @@
-"""Implied Volatility Solver and Term Structure Interpolation.
+"""Implied Volatility Solver and Term Structure Modeling.
 
-Calculates Black-Scholes ATM implied volatility from real options quotes and
-interpolates implied volatilities across target horizons (1, 3, 7, 14 trading days).
+Calculates Black-Scholes ATM option pricing, implied volatility solving via bisection,
+and statistical horizon moves (1, 3, 7, 14, 30 trading days) using EOD volatility/VTA35.
 Pure Python implementation using math.erf for standard normal CDF (no external scipy dependency).
 """
 
@@ -10,8 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import numpy as np
-
-from ta35_dashboard.connectors.dde_parser import ParsedOptionChain
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,114 +75,23 @@ def bs_implied_volatility(
     return iv if 0.002 <= iv <= 2.5 else None
 
 
-def extract_atm_implied_volatility(
-    chain: ParsedOptionChain,
+def calculate_term_structure_expectations_from_vol(
     spot_price: float,
-    r: float = 0.0,
-) -> float | None:
-    """Extract ATM implied volatility from a parsed option chain."""
-    effective_spot = chain.synthetic_spot if chain.synthetic_spot is not None else spot_price
-    if not chain.quotes or effective_spot <= 0:
-        return None
-
-    sorted_quotes = sorted(chain.quotes, key=lambda q: abs(q.strike - effective_spot))
-    
-    # Prioritize native IVs from DDE if available (convert from % to decimal)
-    native_ivs: list[float] = []
-    for q in sorted_quotes[:3]:
-        if q.call_iv is not None and q.call_iv > 0:
-            native_ivs.append(q.call_iv / 100.0)
-        if q.put_iv is not None and q.put_iv > 0:
-            native_ivs.append(q.put_iv / 100.0)
-            
-    if native_ivs:
-        return float(np.median(native_ivs))
-
-    T = max(0.001, chain.days_to_expiration / 365.0)
-    
-    ivs: list[float] = []
-    for q in sorted_quotes[:3]:
-        if q.call_mid is not None:
-            c_iv = bs_implied_volatility(q.call_mid, effective_spot, q.strike, T, "call", r)
-            if c_iv is not None:
-                ivs.append(c_iv)
-
-        if q.put_mid is not None:
-            p_iv = bs_implied_volatility(q.put_mid, effective_spot, q.strike, T, "put", r)
-            if p_iv is not None:
-                ivs.append(p_iv)
-
-    return float(np.median(ivs)) if ivs else None
-
-
-def calculate_term_structure_expectations(
-    weekly_chain: ParsedOptionChain | None,
-    monthly_chain: ParsedOptionChain | None,
-    spot_price: float,
-    target_horizons: tuple[int, ...] = (1, 3, 7, 14),
-    fallback_iv: float = 0.12,
-    chains: list[ParsedOptionChain] | None = None,
+    base_volatility: float,
+    target_horizons: tuple[int, ...] = (1, 3, 7, 14, 30),
 ) -> dict[int, HorizonExpectation]:
-    """Calculate term structure implied volatilities and price ranges across target horizons dynamically."""
-    # 1. Build a list of active chains with their extracted ATM IVs
-    active_chains = []
-    if chains:
-        active_chains = list(chains)
-    else:
-        if weekly_chain:
-            active_chains.append(weekly_chain)
-        if monthly_chain:
-            active_chains.append(monthly_chain)
-
-    # Resolve ATM IV and expiration T for each chain
-    points = []
-    for c in active_chains:
-        iv = extract_atm_implied_volatility(c, spot_price)
-        if iv is not None:
-            T = max(0.001, c.days_to_expiration / 365.0)
-            points.append((T, iv, c.days_to_expiration))
-
-    # Sort points by time to expiration
-    points.sort(key=lambda p: p[0])
-
-    # Fallback if no points parsed
-    if not points:
-        points = [(2.0 / 365.0, fallback_iv, 2.0), (16.0 / 365.0, fallback_iv, 16.0)]
-
+    """Calculate term structure expectations across target horizons using annualized EOD volatility."""
     results: dict[int, HorizonExpectation] = {}
+    vol = max(0.01, base_volatility)
 
     for h in target_horizons:
         T_h = h / 365.0
-
-        # Boundary conditions
-        if T_h <= points[0][0]:
-            iv_h = points[0][1]
-        elif T_h >= points[-1][0]:
-            iv_h = points[-1][1]
-        else:
-            # Find the bracketing points
-            t_idx = 0
-            for i in range(len(points) - 1):
-                if points[i][0] <= T_h < points[i+1][0]:
-                    t_idx = i
-                    break
-            
-            t1, iv1, _ = points[t_idx]
-            t2, iv2, _ = points[t_idx + 1]
-            
-            var1 = (iv1**2) * t1
-            var2 = (iv2**2) * t2
-            
-            # Interpolate variance linearly in time
-            var_h = var1 + (var2 - var1) * (T_h - t1) / (t2 - t1)
-            iv_h = math.sqrt(max(0.0001, var_h / T_h))
-
-        one_sigma = spot_price * iv_h * math.sqrt(h / 365.0)
+        one_sigma = spot_price * vol * math.sqrt(T_h)
         two_sigma = 2.0 * one_sigma
 
         results[h] = HorizonExpectation(
             horizon_days=h,
-            implied_volatility=iv_h,
+            implied_volatility=vol,
             one_sigma_move=one_sigma,
             two_sigma_move=two_sigma,
             lower_1s=spot_price - one_sigma,
