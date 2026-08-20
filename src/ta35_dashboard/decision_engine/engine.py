@@ -43,9 +43,11 @@ def run_trade_decision_engine(
     market_state: str = "ניטרלי",
     parsed_chains: Sequence[Any] | None = None,
     risk_budget_nis: float = 10000.0,
+    horizon_days: int = 7,
     db_path: str | Path | None = None,
     model_version: str = "v1.0.0-frozen",
     rules_version: str = "2026-08-12",
+    **kwargs: Any,
 ) -> TradeTicket | StrategyRecommendation:
     """Main Entry Point for TA-35 Trade Decision Engine.
     
@@ -55,7 +57,9 @@ def run_trade_decision_engine(
     timestamp_str = datetime.now().isoformat()
     snapshot_id = f"SNAP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    mode, router_warnings = determine_engine_mode(parsed_chains)
+    mode, router_warnings = determine_engine_mode(
+        spot_price=spot_price, prob_up=prob_up, forecast_rv=forecast_rv
+    )
     
     model_dist = ModelDistribution(
         model_id=f"MODEL_{model_version}",
@@ -106,6 +110,7 @@ def run_trade_decision_engine(
             forecast_rv=forecast_rv,
             horizon_days=7,
             family=primary_fam,
+            prob_up=prob_up,
         )
 
         rec = StrategyRecommendation(
@@ -128,11 +133,6 @@ def run_trade_decision_engine(
             estimated_legs=est_legs,
             forecast_confidence=model_dist.confidence,
             data_quality_score=0.90,
-            requires_chain_validation=True,
-            unavailable_fields=(
-                "strikes", "legs", "bid_ask_spreads", "limit_price",
-                "market_ev", "model_edge", "max_loss_nis", "position_size"
-            ),
             warnings=tuple(router_warnings),
             snapshot_id=snapshot_id,
             model_version=model_version,

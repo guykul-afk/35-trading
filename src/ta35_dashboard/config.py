@@ -6,7 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 @dataclass(frozen=True)
 class Settings:
-    database_path: Path = PROJECT_ROOT / "data" / "ta35_lite.sqlite3"
+    database_path: Path = PROJECT_ROOT / "data" / "ta35_dashboard.db"
     timezone: str = "Asia/Jerusalem"
     stale_after_days: int = 3
     model_version: str = "1.5.0"

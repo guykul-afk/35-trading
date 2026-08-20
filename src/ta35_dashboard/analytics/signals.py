@@ -52,6 +52,7 @@ def indicator_signal(
         "vix_curve_ratio": (1.0, 0.35, 0.02, True),
         "vix9d_vix_ratio": (1.0, 0.25, 0.02, True),
         "vix_vix3m_ratio": (1.0, 0.25, 0.02, True),
+        "vix_slope": (0.0, 0.20, 0.02, True),
     }
     if key in ratio_rules:
         neutral, scale, deadband, inverse_market = ratio_rules[key]
@@ -71,6 +72,93 @@ def indicator_signal(
                 else 1
             ),
             note,
+        )
+
+    if key == "banks_rs_spread":
+        mkt_dir = direction(value, neutral=0.0, deadband=0.005)
+        strength = heuristic_strength(value, neutral=0.0, full_scale=0.05)
+        return (
+            "↔",
+            arrow(mkt_dir),
+            strength,
+            "עוצמה יחסית של סקטור הבנקים מול ת״א־35; ביצועי יתר של הבנקים מסמנים מומנטום חיובי.",
+        )
+
+    if key == "credit_spread_stress":
+        vol_dir = -direction(value, neutral=0.0, deadband=0.25)
+        mkt_dir = direction(value, neutral=0.0, deadband=0.25)
+        strength = heuristic_strength(value, neutral=0.0, full_scale=2.0)
+        return (
+            arrow(vol_dir),
+            arrow(mkt_dir),
+            strength,
+            "מרווח אשראי קונצרני מול ממשלתי; ירידה חדה מסמנת הידוק נזילות ולחץ תנודתי.",
+        )
+
+    if key == "flight_to_safety":
+        vol_dir = -direction(value, neutral=0.0, deadband=0.30)
+        mkt_dir = direction(value, neutral=0.0, deadband=0.30)
+        strength = heuristic_strength(value, neutral=0.0, full_scale=2.0)
+        return (
+            arrow(vol_dir),
+            arrow(mkt_dir),
+            strength,
+            "זרימת הון בין מניות לאג״ח ממשלתי; ערך חיובי מסמן Risk-On, ערך שלילי מסמן מעבר למקלט.",
+        )
+
+    if key == "yield_curve_slope":
+        mkt_dir = direction(value, neutral=0.0, deadband=0.01)
+        strength = heuristic_strength(value, neutral=0.0, full_scale=0.05)
+        return (
+            "↔",
+            arrow(mkt_dir),
+            strength,
+            "שיפוע עקום האג״ח הממשלתי; עקום תלול תומך בבנקים ובמומנטום כלכלי.",
+        )
+
+    if key == "banks_momentum_5d":
+        mkt_dir = direction(value, neutral=0.0, deadband=0.005)
+        strength = heuristic_strength(value, neutral=0.0, full_scale=0.04)
+        return (
+            "↔",
+            arrow(mkt_dir),
+            strength,
+            "שינוי 5 ימים בסקטור הבנקים; מומנטום סקטוריאלי מוביל.",
+        )
+
+    if key == "banks_ta35_corr_20":
+        return (
+            "↔",
+            "↑" if value >= 0.7 else "↔",
+            heuristic_strength(value, neutral=0.5, full_scale=0.5),
+            "קורלציה מתגלגלת 20 יום בנקים/ת״א־35; מתאם גבוה מעיד על הובלה רוחבית רחבה של השוק.",
+        )
+
+    if key == "stock_bond_corr_20":
+        # Positive correlation = inflation / rate hike regime; Negative correlation = flight to safety regime
+        return (
+            "↔",
+            "↔",
+            1,
+            "קורלציה 20 יום מניות–אג״ח ממשלתי; קורלציה שלילית מסמנת משטר מקלט קלאסי, חיובית מסמנת משטר ריבית/אינפלציה.",
+        )
+
+    if key == "gov_bond_momentum_5d":
+        mkt_dir = direction(value, neutral=0.0, deadband=0.003)
+        return (
+            "↔",
+            arrow(mkt_dir),
+            heuristic_strength(value, neutral=0.0, full_scale=0.02),
+            "מומנטום 5 ימים באג״ח ממשלתי כללי; עלייה מעידה על ירידת תשואות ורוגע בריבית.",
+        )
+
+    if key == "credit_bond_momentum_5d":
+        mkt_dir = direction(value, neutral=0.0, deadband=0.003)
+        return (
+            "↔",
+            arrow(mkt_dir),
+            heuristic_strength(value, neutral=0.0, full_scale=0.02),
+            "מומנטום 5 ימים בתל-בונד 60; עלייה מסמנת סביבת נזילות ואשראי יציבה.",
         )
 
     if key in {"forecast_rv_3d", "har_rv_3d", "expected_move_3d_points"}:
