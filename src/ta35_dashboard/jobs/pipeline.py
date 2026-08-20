@@ -283,6 +283,105 @@ def compute_latest_metrics(
         status="research",
     )
 
+    # -------------------------------------------------------------------------
+    # Cross-Asset & Sector Analytics: Banks, Government Bonds, Corporate Credit
+    # -------------------------------------------------------------------------
+    # 1. TA-Banks 5
+    banks_bars = repository.bar_history("TA_BANKS5", 252)
+    if banks_bars and len(banks_bars) >= 20:
+        banks_closes = [b.close for b in banks_bars]
+        ta_map = {b.session_date: b.close for b in ta}
+        paired_banks = [(b.close, ta_map[b.session_date]) for b in banks_bars if b.session_date in ta_map]
+        
+        if len(paired_banks) >= 20:
+            b_arr = np.array([p[0] for p in paired_banks])
+            t_arr = np.array([p[1] for p in paired_banks])
+            ratio = b_arr / t_arr
+            rs_spread = float(ratio[-1] / np.mean(ratio[-20:]) - 1.0)
+            add("banks_rs_spread", rs_spread, status="research")
+            
+            b_ret = np.diff(np.log(b_arr[-21:]))
+            t_ret = np.diff(np.log(t_arr[-21:]))
+            if len(b_ret) >= 10 and np.std(b_ret) > 0 and np.std(t_ret) > 0:
+                corr = float(np.corrcoef(b_ret, t_ret)[0, 1])
+                add("banks_ta35_corr_20", corr, status="research")
+            else:
+                add("banks_ta35_corr_20", None, ("insufficient_variance",))
+        else:
+            add("banks_rs_spread", None, ("insufficient_paired_history",))
+            add("banks_ta35_corr_20", None, ("insufficient_paired_history",))
+            
+        banks_5d = banks_closes[-1] / banks_closes[-6] - 1.0 if len(banks_closes) >= 6 else None
+        add("banks_momentum_5d", banks_5d, () if banks_5d is not None else ("insufficient_history",), status="research")
+    else:
+        add("banks_rs_spread", None, ("missing_banks_data",))
+        add("banks_ta35_corr_20", None, ("missing_banks_data",))
+        add("banks_momentum_5d", None, ("missing_banks_data",))
+
+    # 2. Government Bonds (TEL_GOV_ALL)
+    gov_bars = repository.bar_history("TEL_GOV_ALL", 252)
+    if gov_bars and len(gov_bars) >= 20:
+        gov_closes = [b.close for b in gov_bars]
+        ta_map = {b.session_date: b.close for b in ta}
+        paired_gov = [(ta_map[b.session_date], b.close) for b in gov_bars if b.session_date in ta_map]
+        
+        if len(paired_gov) >= 20:
+            t_arr = np.array([p[0] for p in paired_gov])
+            g_arr = np.array([p[1] for p in paired_gov])
+            
+            t_5d = t_arr[-1] / t_arr[-6] - 1.0 if len(t_arr) >= 6 else 0.0
+            g_5d = g_arr[-1] / g_arr[-6] - 1.0 if len(g_arr) >= 6 else 0.0
+            current_rv20 = rv[20] if rv.get(20) else 0.15
+            flight_val = float((t_5d - g_5d) / (current_rv20 * np.sqrt(5.0 / 252.0)))
+            add("flight_to_safety", flight_val, status="research")
+            
+            t_ret = np.diff(np.log(t_arr[-21:]))
+            g_ret = np.diff(np.log(g_arr[-21:]))
+            if len(t_ret) >= 10 and np.std(t_ret) > 0 and np.std(g_ret) > 0:
+                sb_corr = float(np.corrcoef(t_ret, g_ret)[0, 1])
+                add("stock_bond_corr_20", sb_corr, status="research")
+            else:
+                add("stock_bond_corr_20", None, ("insufficient_variance",))
+        else:
+            add("flight_to_safety", None, ("insufficient_paired_history",))
+            add("stock_bond_corr_20", None, ("insufficient_paired_history",))
+            
+        gov_5d = gov_closes[-1] / gov_closes[-6] - 1.0 if len(gov_closes) >= 6 else None
+        add("gov_bond_momentum_5d", gov_5d, () if gov_5d is not None else ("insufficient_history",), status="research")
+        
+        gov_rv5 = realized_volatility(gov_closes[-6:]).value if len(gov_closes) >= 6 else None
+        gov_rv20 = realized_volatility(gov_closes[-21:]).value if len(gov_closes) >= 21 else None
+        gov_move = (gov_rv5 / gov_rv20) if gov_rv5 is not None and gov_rv20 else None
+        add("gov_move_proxy", gov_move, () if gov_move is not None else ("insufficient_history",), status="research")
+    else:
+        add("flight_to_safety", None, ("missing_gov_data",))
+        add("stock_bond_corr_20", None, ("missing_gov_data",))
+        add("gov_bond_momentum_5d", None, ("missing_gov_data",))
+        add("gov_move_proxy", None, ("missing_gov_data",))
+
+    # 3. Corporate Credit (TEL_BOND60)
+    bond_bars = repository.bar_history("TEL_BOND60", 252)
+    if bond_bars and len(bond_bars) >= 20 and gov_bars and len(gov_bars) >= 20:
+        bond_map = {b.session_date: b.close for b in bond_bars}
+        paired_credit = [(bond_map[b.session_date], b.close) for b in gov_bars if b.session_date in bond_map]
+        if len(paired_credit) >= 20:
+            b_arr = np.array([p[0] for p in paired_credit])
+            g_arr = np.array([p[1] for p in paired_credit])
+            credit_ratio = b_arr / g_arr
+            ratio_mean = np.mean(credit_ratio[-20:])
+            ratio_std = np.std(credit_ratio[-20:], ddof=1)
+            credit_z = float((credit_ratio[-1] - ratio_mean) / ratio_std) if ratio_std > 0 else 0.0
+            add("credit_spread_stress", credit_z, status="research")
+        else:
+            add("credit_spread_stress", None, ("insufficient_paired_history",))
+            
+        b_closes = [b.close for b in bond_bars]
+        bond_5d = b_closes[-1] / b_closes[-6] - 1.0 if len(b_closes) >= 6 else None
+        add("credit_bond_momentum_5d", bond_5d, () if bond_5d is not None else ("insufficient_history",), status="research")
+    else:
+        add("credit_spread_stress", None, ("missing_credit_or_gov_data",))
+        add("credit_bond_momentum_5d", None, ("missing_credit_data",))
+
     score = 0
     score += (
         2

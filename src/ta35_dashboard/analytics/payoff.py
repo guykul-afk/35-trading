@@ -31,21 +31,31 @@ def generate_strategy_payoff_data(
     index_levels = np.linspace(min_price, max_price, points)
     payoff = np.zeros_like(index_levels)
 
+    T_years = max(1.0, float(horizon_days)) / 365.0
+    r_rate = 0.04
+    
     for leg in legs:
         action = str(leg.get("action", "")).lower()
         opt_type = str(leg.get("option_type", "")).lower()
-        strike = leg.get("strike")
-        qty = int(leg.get("quantity", 1))
+        strike = leg.get("strike") or leg.get("estimated_strike")
+        qty = int(leg.get("quantity") or leg.get("ratio", 1))
 
         if strike is None or strike <= 0:
             continue
 
         direction = 1.0 if action in ("buy", "קנייה", "long") else -1.0
 
+        # Theoretical Black-Scholes entry premium estimation
         if opt_type in ("call", "קול"):
-            leg_payoff = np.maximum(index_levels - strike, 0.0)
+            d1 = (math.log(spot / strike) + (r_rate + 0.5 * forecast_volatility**2) * T_years) / (forecast_volatility * math.sqrt(T_years))
+            d2 = d1 - forecast_volatility * math.sqrt(T_years)
+            prem = spot * (0.5 * (1.0 + math.erf(d1 / math.sqrt(2.0)))) - strike * math.exp(-r_rate * T_years) * (0.5 * (1.0 + math.erf(d2 / math.sqrt(2.0))))
+            leg_payoff = np.maximum(index_levels - strike, 0.0) - prem
         elif opt_type in ("put", "פוט"):
-            leg_payoff = np.maximum(strike - index_levels, 0.0)
+            d1 = (math.log(spot / strike) + (r_rate + 0.5 * forecast_volatility**2) * T_years) / (forecast_volatility * math.sqrt(T_years))
+            d2 = d1 - forecast_volatility * math.sqrt(T_years)
+            prem = strike * math.exp(-r_rate * T_years) * (0.5 * (1.0 + math.erf(-d2 / math.sqrt(2.0)))) - spot * (0.5 * (1.0 + math.erf(-d1 / math.sqrt(2.0))))
+            leg_payoff = np.maximum(strike - index_levels, 0.0) - prem
         else:
             leg_payoff = np.zeros_like(index_levels)
 

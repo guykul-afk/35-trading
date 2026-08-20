@@ -43,9 +43,11 @@ def run_trade_decision_engine(
     market_state: str = "ניטרלי",
     parsed_chains: Sequence[Any] | None = None,
     risk_budget_nis: float = 10000.0,
+    horizon_days: int = 7,
     db_path: str | Path | None = None,
     model_version: str = "v1.0.0-frozen",
     rules_version: str = "2026-08-12",
+    **kwargs: Any,
 ) -> TradeTicket | StrategyRecommendation:
     """Main Entry Point for TA-35 Trade Decision Engine.
     
@@ -55,14 +57,16 @@ def run_trade_decision_engine(
     timestamp_str = datetime.now().isoformat()
     snapshot_id = f"SNAP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    mode, router_warnings = determine_engine_mode(parsed_chains)
+    mode, router_warnings = determine_engine_mode(
+        spot_price=spot_price, prob_up=prob_up, forecast_rv=forecast_rv
+    )
     
     model_dist = ModelDistribution(
         model_id=f"MODEL_{model_version}",
         direction_probability=prob_up,
         forecast_rv=forecast_rv,
         expected_move=spot_price * forecast_rv * math.sqrt(14.0 / TRADING_DAYS_PER_YEAR),
-        confidence=0.0 if prob_up == 0.50 else (0.82 if 0.40 <= prob_up <= 0.60 else 0.88),
+        confidence=0.82 if 0.40 <= prob_up <= 0.60 else 0.88,
         regime=regime,
     )
 
@@ -85,7 +89,7 @@ def run_trade_decision_engine(
             target_range = (round(spot_price, 1), round(spot_price + target_move, 1))
             inval_level = round(spot_price - target_move * 0.8, 1)
         elif prob_up <= 0.45:
-            target_range = (round(spot_price - target_move, 1), round(spot_price), 1)
+            target_range = (round(spot_price - target_move, 1), round(spot_price, 1))
             inval_level = round(spot_price + target_move * 0.8, 1)
         else:
             target_range = (round(spot_price - target_move * 0.7, 1), round(spot_price + target_move * 0.7, 1))
@@ -106,6 +110,7 @@ def run_trade_decision_engine(
             forecast_rv=forecast_rv,
             horizon_days=7,
             family=primary_fam,
+            prob_up=prob_up,
         )
 
         rec = StrategyRecommendation(
@@ -128,11 +133,6 @@ def run_trade_decision_engine(
             estimated_legs=est_legs,
             forecast_confidence=model_dist.confidence,
             data_quality_score=0.90,
-            requires_chain_validation=True,
-            unavailable_fields=(
-                "strikes", "legs", "bid_ask_spreads", "limit_price",
-                "market_ev", "model_edge", "max_loss_nis", "position_size"
-            ),
             warnings=tuple(router_warnings),
             snapshot_id=snapshot_id,
             model_version=model_version,
@@ -143,12 +143,9 @@ def run_trade_decision_engine(
         return rec
 
     # =========================================================================
-    # ROUTE 2: DDE OPTIONS CHAIN MODE (LIVE_EXECUTABLE, STATIC_CHAIN_RESEARCH, RESEARCH_ONLY)
+    # ROUTE 2: FULL DDE MODE (Valid option chains present)
     # =========================================================================
     all_candidates: list[tuple[CandidateTrade, float, float, float, float, float]] = []
-    
-    best_rejected_candidate: tuple[CandidateTrade, float, float, float, float, float] | None = None
-    highest_rejected_score = -1.0
     
     for chain in (parsed_chains or []):
         cand_list = generate_candidate_trades(chain, spot_price, model_dist)
@@ -159,49 +156,28 @@ def run_trade_decision_engine(
             passed, rej_reason = apply_quality_gates(
                 cand, mdl_ev, edge, risk_budget_nis=risk_budget_nis
             )
-            score, coverage = calculate_opportunity_score(cand, mdl_ev, edge, mkt_pop, model_dist.confidence)
-            
-            cand_tuple = (cand, score, mdl_ev, mkt_ev, edge, mkt_pop)
-            if passed and coverage >= 1.0:  # Gate: Require 100% eligibility coverage
-                all_candidates.append(cand_tuple)
-            else:
-                if score > highest_rejected_score:
-                    highest_rejected_score = score
-                    best_rejected_candidate = cand_tuple
+            if passed:
+                score, coverage = calculate_opportunity_score(cand, mdl_ev, edge, mkt_pop, model_dist.confidence)
+                if coverage >= 0.6:  # Gate: Must have at least 60% of data (requires more than just Edge+Conf+Risk)
+                    all_candidates.append((cand, score, mdl_ev, mkt_ev, edge, mkt_pop))
 
     # If no trade passed gates -> Output PASS TradeTicket
     if not all_candidates:
-        if best_rejected_candidate:
-            best_cand, best_score, best_mdl_ev, best_mkt_ev, best_edge, best_mkt_pop = best_rejected_candidate
-            default_expiry = best_cand.expiry
-            fam = best_cand.strategy_family
-            variant = best_cand.strategy_variant
-            legs = best_cand.legs
-            limit = best_cand.limit_price
-            net_dc = best_cand.net_debit_credit
-            score_to_show = best_score
-        else:
-            default_expiry = Expiry(
-                expiration_date=getattr(parsed_chains[0], "expiration_label", "Standard"),
-                days_to_expiration=float(getattr(parsed_chains[0], "days_to_expiration", 14.0)),
-            ) if parsed_chains else Expiry("N/A", 14.0)
-            fam = StrategyFamily.LONG_BUTTERFLY
-            variant = "No Trade Pass"
-            legs = ()
-            limit = 0.0
-            net_dc = 0.0
-            score_to_show = 0.0
+        default_expiry = Expiry(
+            expiration_date=getattr(parsed_chains[0], "expiration_label", "Standard"),
+            days_to_expiration=float(getattr(parsed_chains[0], "days_to_expiration", 14.0)),
+        ) if parsed_chains else Expiry("N/A", 14.0)
         
         pass_ticket = TradeTicket(
             verdict=Verdict.PASS,
-            opportunity_score=score_to_show,
+            opportunity_score=0.0,
             no_trade_reason="שום מבנה לא עבר את שערי האיכות (חסר Edge מספיק לאחר עלויות או חריגת סיכון)",
             horizon_days=14,
             expiry=default_expiry,
-            strategy_family=fam,
-            strategy_variant=variant,
-            legs=legs,
-            limit_price=limit,
+            strategy_family=StrategyFamily.LONG_BUTTERFLY,
+            strategy_variant="No Trade Pass",
+            legs=(),
+            limit_price=0.0,
             net_debit_credit=0.0,
             quote_age_seconds=10.0,
             bid_ask_width=0.0,

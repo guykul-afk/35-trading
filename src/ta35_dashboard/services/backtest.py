@@ -332,6 +332,77 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
     ta["vix_curve_ratio"] = aligned["VIX9D"] / aligned["VIX3M"]
     ta["vix9d_vix_ratio"] = aligned["VIX9D"] / aligned["VIX"]
     ta["vix_vix3m_ratio"] = aligned["VIX"] / aligned["VIX3M"]
+    ta["vix_slope"] = (aligned["VIX9D"] / aligned["VIX"]) - (aligned["VIX"] / aligned["VIX3M"])
+
+    banks = _bars_frame(repository, "TA_BANKS5")
+    if not banks.empty:
+        banks_close = _asof(banks["close"].astype(float), ta.index)
+        rs = np.log(banks_close / close)
+        ta["banks_rs_spread"] = rs - rs.rolling(20, min_periods=5).mean()
+    else:
+        ta["banks_rs_spread"] = np.nan
+
+    # Bond & Credit indicators
+    tel_gov_all = _bars_frame(repository, "TEL_GOV_ALL")
+    tel_gov_10y = _bars_frame(repository, "TEL_GOV_10Y")
+    tel_gov_2y = _bars_frame(repository, "TEL_GOV_2Y")
+    tel_bond60 = _bars_frame(repository, "TEL_BOND60")
+
+    gov_all_close = (
+        _asof(tel_gov_all["close"].astype(float), ta.index)
+        if not tel_gov_all.empty
+        else pd.Series(np.nan, index=ta.index)
+    )
+    gov_10y_close = (
+        _asof(tel_gov_10y["close"].astype(float), ta.index)
+        if not tel_gov_10y.empty
+        else gov_all_close
+    )
+    gov_2y_close = (
+        _asof(tel_gov_2y["close"].astype(float), ta.index)
+        if not tel_gov_2y.empty
+        else pd.Series(np.nan, index=ta.index)
+    )
+    bond60_close = (
+        _asof(tel_bond60["close"].astype(float), ta.index)
+        if not tel_bond60.empty
+        else pd.Series(np.nan, index=ta.index)
+    )
+
+    if not tel_bond60.empty and not tel_gov_all.empty:
+        rs_credit = np.log(bond60_close / gov_all_close)
+        roll_mean = rs_credit.rolling(20, min_periods=5).mean()
+        roll_std = rs_credit.rolling(20, min_periods=5).std(ddof=1).clip(lower=1e-6)
+        ta["credit_spread_stress"] = (rs_credit - roll_mean) / roll_std
+    else:
+        ta["credit_spread_stress"] = np.nan
+
+    if not tel_gov_all.empty:
+        ta_ret_5d = close.pct_change(5)
+        gov_ret_5d = gov_all_close.pct_change(5)
+        scale = (ta["rv_20"] * np.sqrt(5 / TRADING_DAYS_PER_YEAR)).clip(lower=1e-6)
+        ta["flight_to_safety"] = (ta_ret_5d - gov_ret_5d) / scale
+    else:
+        ta["flight_to_safety"] = np.nan
+
+    if not tel_gov_10y.empty and not tel_gov_2y.empty:
+        slope = np.log(gov_10y_close / gov_2y_close)
+        ta["yield_curve_slope"] = slope - slope.rolling(20, min_periods=5).mean()
+    elif not tel_gov_10y.empty and not tel_gov_all.empty:
+        slope = np.log(gov_10y_close / gov_all_close)
+        ta["yield_curve_slope"] = slope - slope.rolling(20, min_periods=5).mean()
+    else:
+        ta["yield_curve_slope"] = np.nan
+
+    gov_series = gov_10y_close if not tel_gov_10y.empty else gov_all_close
+    if not gov_series.isna().all():
+        gov_ret = gov_series.pct_change()
+        gov_rv20 = gov_ret.rolling(20, min_periods=10).std(ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR)
+        gov_rv5 = gov_ret.rolling(5, min_periods=3).std(ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR)
+        ta["gov_move_proxy"] = gov_rv5 / gov_rv20.clip(lower=1e-6)
+    else:
+        ta["gov_move_proxy"] = np.nan
+
     local_mean = ta["vta35"].rolling(252, min_periods=120).mean()
     local_std = ta["vta35"].rolling(252, min_periods=120).std(ddof=1)
     global_mean = aligned["VIX"].rolling(252, min_periods=120).mean()
@@ -366,33 +437,38 @@ def _historical_features(repository: SQLiteRepository) -> pd.DataFrame:
         },
         index=ta.index,
     )
-    har_target = _outcomes(ta, 3)["forward_rv"]
-    har_values = np.full(len(ta), np.nan)
-    beta: np.ndarray | None = None
-    har_sigma2_resid: float = 0.0
-    har_columns = ["const", "daily", "weekly", "monthly"]
-    for position in range(123, len(ta)):
-        # Refit weekly; between fits the last fully matured coefficient vector
-        # remains a valid, deliberately stale OOS forecast.
-        if beta is None or position % 5 == 0:
-            train_end = position - 3
-            train = har_features.iloc[: train_end + 1].copy()
-            train["target"] = np.log(
-                har_target.iloc[: train_end + 1].clip(lower=1e-6)
-            )
-            train = train.replace([np.inf, -np.inf], np.nan).dropna()
-            if len(train) >= 80:
-                X_mat = train[har_columns].to_numpy()
-                y_vec = train["target"].to_numpy()
-                beta = np.linalg.lstsq(X_mat, y_vec, rcond=None)[0]
-                resids = y_vec - X_mat @ beta
-                har_sigma2_resid = float(np.var(resids, ddof=len(beta))) if len(resids) > len(beta) else 0.0
-        current = har_features.iloc[position]
-        if beta is not None and current[har_columns].notna().all():
-            log_pred = float(current[har_columns].to_numpy() @ beta)
-            har_values[position] = math.exp(log_pred + 0.5 * har_sigma2_resid)
-    ta["har_rv_3d"] = har_values
-    ta["matched_vrp_3d"] = (ta["vta35"] / 100) ** 2 - ta["har_rv_3d"] ** 2
+    for horizon in BACKTEST_HORIZONS:
+        har_target = _outcomes(ta, horizon)["forward_rv"]
+        har_values = np.full(len(ta), np.nan)
+        beta: np.ndarray | None = None
+        har_sigma2_resid: float = 0.0
+        har_columns = ["const", "daily", "weekly", "monthly"]
+        for position in range(123, len(ta)):
+            if beta is None or position % 5 == 0:
+                train_end = position - horizon
+                train = har_features.iloc[: train_end + 1].copy()
+                train["target"] = np.log(
+                    har_target.iloc[: train_end + 1].clip(lower=1e-6)
+                )
+                train = train.replace([np.inf, -np.inf], np.nan).dropna()
+                if len(train) >= 80:
+                    X_mat = train[har_columns].to_numpy()
+                    y_vec = train["target"].to_numpy()
+                    beta = np.linalg.lstsq(X_mat, y_vec, rcond=None)[0]
+                    resids = y_vec - X_mat @ beta
+                    har_sigma2_resid = float(np.var(resids, ddof=len(beta))) if len(resids) > len(beta) else 0.0
+            current = har_features.iloc[position]
+            if beta is not None and current[har_columns].notna().all():
+                log_pred = float(current[har_columns].to_numpy() @ beta)
+                har_values[position] = math.exp(log_pred + 0.5 * har_sigma2_resid)
+        ta[f"har_rv_{horizon}d"] = har_values
+        ta[f"matched_vrp_{horizon}d"] = (ta["vta35"] / 100) ** 2 - ta[f"har_rv_{horizon}d"] ** 2
+
+        # In absence of other horizon-specific models, use the base forecast candidates for median
+        ta[f"forecast_rv_{horizon}d"] = candidates.median(axis=1, skipna=True)
+        ta[f"expected_move_{horizon}d_points"] = (
+            close * ta[f"forecast_rv_{horizon}d"] * math.sqrt(horizon / TRADING_DAYS_PER_YEAR)
+        )
 
     vol_inputs = pd.DataFrame(
         {

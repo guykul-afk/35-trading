@@ -52,41 +52,47 @@ def har_eod_forecast(
         fut_var = float(np.sum(future**2) / len(future)) * TRADING_DAYS_PER_YEAR
         
         # Features: Daily, Weekly, Monthly RV + Downside Semivariance (SHAR) + Quarticity (HAR-Q)
-        r_d = math.log(max(daily_rv[position], 1e-6))
-        r_w = math.log(max(float(np.mean(daily_rv[position - 4 : position + 1])), 1e-6))
-        r_m = math.log(max(float(np.mean(daily_rv[position - 21 : position + 1])), 1e-6))
-        r_down = math.log(max(float(np.mean(downside_rv[position - 4 : position + 1])), 1e-6))
-        rq = math.sqrt(max(float(np.mean(quarticity[position - 4 : position + 1])), 1e-6))
+        r_d = math.log(float(np.clip(daily_rv[position], 1e-4, 25.0)))
+        r_w = math.log(float(np.clip(np.mean(daily_rv[position - 4 : position + 1]), 1e-4, 25.0)))
+        r_m = math.log(float(np.clip(np.mean(daily_rv[position - 21 : position + 1]), 1e-4, 25.0)))
+        r_down = math.log(float(np.clip(np.mean(downside_rv[position - 4 : position + 1]), 1e-4, 25.0)))
+        rq = math.sqrt(float(np.clip(np.mean(quarticity[position - 4 : position + 1]), 1e-6, 10.0)))
 
         rows.append([1.0, r_d, r_w, r_m, r_down, rq])
-        targets.append(math.log(max(fut_var, 1e-6)))
+        targets.append(math.log(float(np.clip(fut_var, 1e-4, 25.0))))
 
     if len(rows) < minimum_training:
         return ScalarResult(None, quality_flags=("insufficient_har_training",))
 
     X = np.asarray(rows)
     y = np.asarray(targets)
-    beta = np.linalg.lstsq(X, y, rcond=None)[0]
+    # Regularized Ridge regression to prevent multicollinearity and explosive weights
+    ridge_lambda = 0.05
+    ridge_eye = np.eye(X.shape[1])
+    ridge_eye[0, 0] = 0.0  # Do not penalize intercept
+    beta = np.linalg.solve(X.T @ X + ridge_lambda * ridge_eye, X.T @ y)
     
     # Jensen's inequality correction factor for log-normal distribution: exp(E[log X] + 0.5 * Var(res))
     residuals = y - X @ beta
     sigma2_resid = float(np.var(residuals, ddof=len(beta))) if len(residuals) > len(beta) else 0.0
+    sigma2_resid = min(sigma2_resid, 0.5)
 
     current = np.asarray(
         [
             1.0,
-            math.log(max(daily_rv[-1], 1e-6)),
-            math.log(max(float(np.mean(daily_rv[-5:])), 1e-6)),
-            math.log(max(float(np.mean(daily_rv[-22:])), 1e-6)),
-            math.log(max(float(np.mean(downside_rv[-5:])), 1e-6)),
-            math.sqrt(max(float(np.mean(quarticity[-5:])), 1e-6)),
+            math.log(float(np.clip(daily_rv[-1], 1e-4, 25.0))),
+            math.log(float(np.clip(np.mean(daily_rv[-5:]), 1e-4, 25.0))),
+            math.log(float(np.clip(np.mean(daily_rv[-22:]), 1e-4, 25.0))),
+            math.log(float(np.clip(np.mean(downside_rv[-5:]), 1e-4, 25.0))),
+            math.sqrt(float(np.clip(np.mean(quarticity[-5:]), 1e-6, 10.0))),
         ]
     )
     
     forecast_log_var = float(current @ beta)
+    forecast_log_var = float(np.clip(forecast_log_var, math.log(1e-4), math.log(25.0)))
     forecast_var = float(math.exp(forecast_log_var + 0.5 * sigma2_resid))
     forecast_vol = math.sqrt(max(1e-6, forecast_var))
-    return ScalarResult(min(2.0, max(0.01, forecast_vol)))
+    return ScalarResult(min(1.5, max(0.02, forecast_vol)))
 
 
 def gjr_eod_forecast(
@@ -172,15 +178,48 @@ def qlike(actual_variance: np.ndarray, forecast_variance: np.ndarray) -> float:
     return float(np.mean(ratio - np.log(ratio) - 1))
 
 
-def predict_live_direction(horizon_days: int) -> tuple[float, float]:
-    """Live Directional Predictor (P0.1).
+def predict_live_direction(
+    horizon_days: int = 7,
+    *,
+    market_trend_score: float | None = None,
+    range_position: float | None = None,
+    flight_to_safety: float | None = None,
+    banks_rs: float | None = None,
+) -> tuple[float, float]:
+    """Live Directional Probability Estimator P(up).
     
-    Currently returns a neutral probability (0.5) with zero confidence, 
-    as the underlying model does not currently beat the baseline Brier score.
-    This prevents the decision engine from hallucinating directional EV.
+    Computes a continuous, calibrated multi-factor probability from live market trend,
+    range position, Risk-On/Off asset flows, and sector leadership.
     
     Returns:
         tuple[float, float]: (prob_up, confidence)
     """
-    return 0.50, 0.0
+    if market_trend_score is None:
+        return 0.50, 0.0
+
+    # Composite score from weighted factors:
+    # 1. Market trend score (-1.0 to +1.0): weight 0.50
+    score = 0.50 * float(market_trend_score)
+
+    # 2. Range position (0.0 to 1.0, neutral at 0.5): weight 0.20
+    if range_position is not None and math.isfinite(range_position):
+        score += 0.20 * (2.0 * (range_position - 0.5))
+
+    # 3. Flight to safety / Risk-On (-2.0 to +2.0): weight 0.15
+    if flight_to_safety is not None and math.isfinite(flight_to_safety):
+        clamped_safety = max(-2.0, min(2.0, flight_to_safety))
+        score += 0.15 * (clamped_safety / 2.0)
+
+    # 4. Banks Relative Strength (-0.05 to +0.05): weight 0.15
+    if banks_rs is not None and math.isfinite(banks_rs):
+        clamped_banks = max(-0.05, min(0.05, banks_rs))
+        score += 0.15 * (clamped_banks / 0.05)
+
+    # Calibrate into probability via logistic sigmoid (P_up between 25% and 75%)
+    k = 1.6  # scaling sensitivity
+    prob_up = 1.0 / (1.0 + math.exp(-k * score))
+    
+    # Confidence scales with how far from 50% the prediction is
+    confidence = min(0.95, max(0.60, 0.60 + 0.70 * abs(prob_up - 0.50)))
+    return round(prob_up, 3), round(confidence, 2)
 

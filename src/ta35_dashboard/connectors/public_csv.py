@@ -181,7 +181,7 @@ def _read_bytes(location: str | Path) -> bytes:
     ):
         return Path(location).read_bytes()
     request = Request(str(location), headers={"User-Agent": "TA35-Lite/1.0"})
-    with urlopen(request, timeout=30) as response:
+    with urlopen(request, timeout=5) as response:
         return response.read()
 
 

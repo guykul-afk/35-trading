@@ -60,6 +60,39 @@ def _validate_upload(symbol: str, raw: bytes, existing: list) -> tuple[Path, tup
     if bars[-1].session_date > datetime.now(UTC).date():
         path.unlink(missing_ok=True)
         raise ValueError(f"קובץ {symbol} כולל תאריך עתידי ואינו תקין.")
+
+    # Plausibility / Sanity Price Checks per Index
+    expected_ranges = {
+        "TA35": (1500.0, 10000.0, "טווח צפוי: 2,000–8,000 נקודות"),
+        "TA_BANKS5": (3000.0, 25000.0, "טווח צפוי: 5,000–18,000 נקודות"),
+        "TEL_GOV_ALL": (100.0, 1500.0, "טווח צפוי: 200–800 נקודות"),
+        "TEL_BOND60": (100.0, 1500.0, "טווח צפוי: 200–800 נקודות"),
+        "VTA35": (3.0, 150.0, "טווח צפוי: 5.0–80.0 אחוזים"),
+    }
+    if symbol in expected_ranges:
+        min_p, max_p, hint_msg = expected_ranges[symbol]
+        last_price = bars[-1].close
+        if last_price is not None and not (min_p <= last_price <= max_p):
+            path.unlink(missing_ok=True)
+            raise ValueError(
+                f"שגיאת אימות תוכן ב-{symbol}: שער הנעילה ({last_price:,.2f}) חורג מהטווח ההגיוני לסדרה זו ({hint_msg})."
+            )
+
+    # Sanity check against existing historical close (single-day jump check)
+    if existing and len(bars) < 20:  # only for small incremental deltas, not full history reloads
+        last_existing_close = existing[-1].close
+        # Skip jump check if transitioning from demo data scale to real market scale
+        if last_existing_close is not None and last_existing_close > 0:
+            is_demo_transition = (symbol == "TA_BANKS5" and last_existing_close < 3000.0 and bars[-1].close > 5000.0)
+            if not is_demo_transition:
+                for bar in bars:
+                    if bar.close is not None and bar.session_date >= existing[-1].session_date:
+                        ratio = abs(bar.close / last_existing_close - 1.0)
+                        if ratio > 0.35:  # Single day jump > 35%
+                            path.unlink(missing_ok=True)
+                            raise ValueError(
+                                f"שגיאת אימות ב-{symbol}: שינוי יומי חריג של {ratio:.1%} (משער {last_existing_close:,.2f} לשער {bar.close:,.2f}). נראה שקובץ הנתונים שייך למדד אחר."
+                            )
     return path, bars
 
 
@@ -143,23 +176,96 @@ def _fetch_external_sources(
     return results
 
 
+def auto_detect_series(raw: bytes, filename: str = "") -> str:
+    """Automatically detect the financial series/symbol from CSV content and filename."""
+    sample = ""
+    for enc in ("utf-8-sig", "utf-8", "windows-1255", "iso-8859-8", "utf-16"):
+        try:
+            sample = raw[:2048].decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+
+    # Look only at the first 3 lines to avoid matching numbers in the data rows (like market cap)
+    lines = sample.splitlines()[:3]
+    header_text = " ".join(lines).lower()
+    full_text = (header_text + " " + filename).lower()
+
+    # 1. VTA35 (Implied volatility index)
+    if any(k in full_text for k in ("vta35", "vta-35", "vta 35", "598", "תנודתיות", "volatility")):
+        return "VTA35"
+
+    # 2. TA-Banks 5
+    if any(k in full_text for k in ("banks", "בנקים", "164", "147")):
+        return "TA_BANKS5"
+
+    # 3. Tel-Gov 10Y+
+    if any(k in full_text for k in ("gov 10", "gov-10", "gov10", "10y", "10+", "שקלי 10", "607")):
+        return "TEL_GOV_10Y"
+
+    # 4. Tel-Gov 0-2
+    if any(k in full_text for k in ("gov 0-2", "gov 2", "0-2", "2y", "שקלי 0-2", "603")):
+        return "TEL_GOV_2Y"
+
+    # 5. Tel-Bond 60
+    if any(k in full_text for k in ("bond 60", "bond-60", "bond60", "בונד 60", "בונד-60", "703")):
+        return "TEL_BOND60"
+
+    # 6. Tel-Gov All
+    if any(k in full_text for k in ("gov all", "gov-all", "govall", "תל גוב-כללי", "תל גוב כללי", "תל-גוב כללי", "גוב כללי", "תל גוב", "601")):
+        return "TEL_GOV_ALL"
+
+    # 7. USD/ILS
+    if any(k in full_text for k in ("usd/ils", "usdils", "שער דולר", "דולר")):
+        return "USDILS"
+
+    # 8. TA-35
+    if any(k in full_text for k in ("ta-35", "ta 35", "ta35", "ת\"א-35", "ת״א-35", "ת\"א 35", "ת״א 35", "תל אביב 35", "142")):
+        return "TA35"
+
+    return "TA35"
+
+
 def import_tase_uploads(
     database_path: Path,
     downloads_dir: Path,
     uploads: Mapping[str, bytes],
 ) -> TaseUploadResult:
-    """Validate uploads, import all series (TASE, Cboe, USDILS) into a staged DB, then atomically activate it."""
+    """Validate uploads, auto-detect series from content, import into staged DB, then activate it."""
 
-    unknown = set(uploads) - {"TA35", "VTA35", "USDILS", "VIX9D", "VIX", "VIX3M"}
-    if unknown:
-        raise ValueError(f"סדרות לא נתמכות: {', '.join(sorted(unknown))}")
-    payloads = {symbol: raw for symbol, raw in uploads.items() if raw}
-    if "TA35" not in payloads:
-        raise ValueError("יש להעלות קובץ ת״א־35.")
+    SUPPORTED = {
+        "TA35",
+        "VTA35",
+        "USDILS",
+        "VIX9D",
+        "VIX",
+        "VIX3M",
+        "TA_BANKS5",
+        "TEL_GOV_ALL",
+        "TEL_GOV_10Y",
+        "TEL_GOV_2Y",
+        "TEL_BOND60",
+    }
+    
+    raw_payloads = {key: raw for key, raw in uploads.items() if raw}
+    if not raw_payloads:
+        raise ValueError("לא נבחרו קבצים לעדכון.")
+
+    # Automatically analyze content of each uploaded file and map to the true series symbol
+    payloads: dict[str, bytes] = {}
+    for key, raw in raw_payloads.items():
+        detected = auto_detect_series(raw, filename=key)
+        symbol = detected if detected in SUPPORTED else (key if key in SUPPORTED else "TA35")
+        payloads[symbol] = raw
 
     database_path = Path(database_path)
     downloads_dir = Path(downloads_dir)
     current = SQLiteRepository(database_path)
+
+    existing_ta35 = current.bar_history("TA35", 1)
+    if "TA35" not in payloads and not existing_ta35:
+        raise ValueError("בטעינה ראשונית של המערכת יש צורך בקובץ ת״א־35.")
+
     validated: dict[str, tuple[Path | None, tuple]] = {}
     deltas: dict[str, tuple[Path, tuple]] = {}
     staged_path: Path | None = None
@@ -205,8 +311,15 @@ def import_tase_uploads(
         if database_path.exists():
             shutil.copy2(database_path, staged_path)
 
+        def _source_for(s: str) -> str:
+            if s.startswith("VIX"):
+                return "Cboe"
+            if s == "USDILS":
+                return "Bank of Israel"
+            return "TASE"
+
         specs = tuple(
-            CsvSeriesSpec(symbol, path, "TASE" if symbol in ("TA35", "VTA35") else ("Cboe" if symbol.startswith("VIX") else "Bank of Israel"), True, True)
+            CsvSeriesSpec(symbol, path, _source_for(symbol), True, True)
             for symbol, (path, _) in deltas.items()
         )
         staged_repository = SQLiteRepository(staged_path)
