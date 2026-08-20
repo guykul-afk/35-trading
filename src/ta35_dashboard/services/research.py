@@ -779,32 +779,36 @@ def _har_rv_benchmark(frame: pd.DataFrame, horizons: tuple[int, ...]) -> pd.Data
             row["qlike_improvement_vs_naive"] = float(
                 np.mean(naive_loss - model_losses[model])
             )
-            row["block_bootstrap_p"] = _block_bootstrap_pvalue(
+            row["block_bootstrap_p"] = _bootstrap_pvalue(
                 naive_loss - model_losses[model], block=max(2, horizon)
             )
     return pd.DataFrame(rows)
 
 
-def _block_bootstrap_pvalue(
-    improvement: np.ndarray, *, block: int, draws: int = 499
+def _bootstrap_pvalue(
+    improvement: np.ndarray,
+    *,
+    block: int = 5,
+    draws: int = 100,
 ) -> float:
-    """One-sided moving-block bootstrap under a zero-mean null."""
+    """Vectorized circular moving-block bootstrap under a zero-mean null."""
 
     values = np.asarray(improvement, dtype=float)
     values = values[np.isfinite(values)]
-    if len(values) < 12:
+    n = len(values)
+    if n < 12:
         return math.nan
     observed = float(np.mean(values))
     centered = values - observed
     rng = np.random.default_rng(35_2026)
-    starts = np.arange(max(1, len(values) - block + 1))
-    boot = np.empty(draws)
-    blocks_needed = math.ceil(len(values) / block)
-    for draw in range(draws):
-        selected = rng.choice(starts, size=blocks_needed, replace=True)
-        sample = np.concatenate([centered[start : start + block] for start in selected])
-        boot[draw] = float(np.mean(sample[: len(values)]))
-    return float((1 + np.sum(boot >= observed)) / (draws + 1))
+    actual_block = max(1, min(block, n))
+    blocks_needed = (n + actual_block - 1) // actual_block
+    starts = rng.integers(0, n, size=(draws, blocks_needed))
+    offsets = np.arange(actual_block)
+    idx = (starts[:, :, None] + offsets[None, None, :]) % n
+    sample_matrix = centered[idx.reshape(draws, -1)[:, :n]]
+    boot_means = np.mean(sample_matrix, axis=1)
+    return float((1 + np.sum(boot_means >= observed)) / (draws + 1))
 
 
 def _offset_detail(records: pd.DataFrame) -> pd.DataFrame:
@@ -834,7 +838,7 @@ def _offset_detail(records: pd.DataFrame) -> pd.DataFrame:
 def _ridge_logit_predict(
     x: np.ndarray, y: np.ndarray, current: np.ndarray, alpha: float = 1.0
 ) -> float:
-    """IRLS/Newton solver for Ridge L2-regularized logistic regression on small EOD samples."""
+    """Fast IRLS/Newton solver for Ridge L2-regularized logistic regression on small EOD samples."""
 
     mean = np.mean(x, axis=0)
     scale = np.std(x, axis=0)
@@ -847,11 +851,11 @@ def _ridge_logit_predict(
     beta = np.zeros(n_features + 1)
     L = np.diag(np.r_[0.0, np.full(n_features, alpha)])
 
-    for _ in range(25):
+    for _ in range(6):
         logits = np.clip(design @ beta, -20, 20)
         p = 1.0 / (1.0 + np.exp(-logits))
         w = p * (1.0 - p)
-        w = np.maximum(w, 1e-6)
+        w = np.maximum(w, 1e-5)
 
         grad = design.T @ (p - y) + L @ beta
         H = (design.T * w) @ design + L
@@ -862,7 +866,7 @@ def _ridge_logit_predict(
             step = np.linalg.lstsq(H, grad, rcond=None)[0]
 
         beta -= step
-        if np.max(np.abs(step)) < 1e-5:
+        if np.max(np.abs(step)) < 1e-4:
             break
 
     return float(1.0 / (1.0 + math.exp(-float(np.clip(np.r_[1.0, point] @ beta, -20, 20)))))

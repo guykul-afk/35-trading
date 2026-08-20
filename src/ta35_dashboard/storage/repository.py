@@ -269,16 +269,20 @@ class SQLiteRepository:
                 q.put_bid_size,
                 q.put_ask_size,
                 q.put_iv,
+                q.call_contract_id,
+                q.put_contract_id,
+                getattr(chain, "content_hash", None),
             )
             for q in chain.quotes
         ]
         with self._connect() as connection:
             connection.executemany(
-                """INSERT INTO chain_snapshots
+                """INSERT OR IGNORE INTO chain_snapshots
                    (timestamp, source_file, expiration_label, days_to_expiration, synthetic_spot, strike,
                     call_bid, call_ask, call_last, call_bid_size, call_ask_size, call_iv,
-                    put_bid, put_ask, put_last, put_bid_size, put_ask_size, put_iv)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    put_bid, put_ask, put_last, put_bid_size, put_ask_size, put_iv,
+                    call_contract_id, put_contract_id, content_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 records,
             )
 

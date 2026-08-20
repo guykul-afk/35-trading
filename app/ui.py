@@ -11,17 +11,18 @@ def repository() -> SQLiteRepository:
     return SQLiteRepository(SETTINGS.database_path)
 
 
-@st.cache_data(show_spinner=False)
-def _cached_bundle(database_path: str, modified_ns: int):
-    del modified_ns  # cache-key only; the repository reads the path below.
+@st.cache_resource(show_spinner=False)
+def _cached_bundle(database_path: str, snapshot_id: str | None):
+    del snapshot_id  # cache-key only; the repository reads the path below.
     return load_dashboard_bundle(SQLiteRepository(database_path))
 
 
 def bundle():
     try:
-        database_path = SETTINGS.database_path
-        modified_ns = database_path.stat().st_mtime_ns if database_path.exists() else 0
-        return _cached_bundle(str(database_path), modified_ns)
+        repo = repository()
+        snap = repo.latest_snapshot()
+        snapshot_id = snap.run_id if snap else "empty"
+        return _cached_bundle(str(SETTINGS.database_path), snapshot_id)
     except LookupError:
         st.error(
             "אין נתוני Lite. הרץ `python scripts/seed_demo.py` לתצוגה או ייבא CSV ציבורי."
