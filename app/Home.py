@@ -23,6 +23,7 @@ import streamlit as st
 from ui import bundle, page_header, repository
 
 from decision_ui import render_decision_hero
+from track_record_ui import render_track_record_dashboard
 from ta35_dashboard.analytics import probability_band
 from ta35_dashboard.analytics.forecasting import predict_live_direction
 from ta35_dashboard.config import PROJECT_ROOT, SETTINGS
@@ -38,6 +39,16 @@ repo = repository()
 range_pos_card = card_map.get("range_position_20")
 safety_card = card_map.get("flight_to_safety")
 banks_rs_card = card_map.get("banks_rs_spread")
+last_close_val_init = float(data.ta35_closes[-1]) if data.ta35_closes else 4150.0
+
+from ta35_dashboard.analytics.putcall_service import load_latest_putcall_snapshot
+latest_putcall_snap = load_latest_putcall_snapshot(SETTINGS.database_path)
+pcr_oi_val = latest_putcall_snap.pcr_oi if latest_putcall_snap else None
+pain_dist_val = (
+    (latest_putcall_snap.max_pain_strike - last_close_val_init) / last_close_val_init * 100.0
+    if latest_putcall_snap and last_close_val_init > 0
+    else None
+)
 
 latest_prob_init, prob_confidence = predict_live_direction(
     horizon_days=7,
@@ -45,8 +56,9 @@ latest_prob_init, prob_confidence = predict_live_direction(
     range_position=range_pos_card.value if range_pos_card else None,
     flight_to_safety=safety_card.value if safety_card else None,
     banks_rs=banks_rs_card.value if banks_rs_card else None,
+    pcr_oi=pcr_oi_val,
+    max_pain_distance_pct=pain_dist_val,
 )
-last_close_val_init = float(data.ta35_closes[-1]) if data.ta35_closes else 4150.0
 
 vta35_card = card_map.get("vta35")
 vta35_val = vta35_card.value if vta35_card and vta35_card.value is not None else (data.implied_volatility * 100 if data.implied_volatility else (data.vta35_values[-1] if data.vta35_values else None))
@@ -72,11 +84,12 @@ decision_result = run_trade_decision_engine(
 page_header("מנוע החלטת מסחר ת״א־35 — EOD Trade Decision Engine", data)
 
 # יצירת חלוקת הטאבים המרכזית (פירמידה הפוכה)
-tab_trade, tab_track, tab_market, tab_research, tab_data = st.tabs(
+tab_trade, tab_history, tab_track, tab_market, tab_research, tab_data = st.tabs(
     [
         "🎯 הטרייד",
-        "📈 מעקב",
-        "🌍 שוק ומניפה",
+        "📊 ביצועי עבר ואימות",
+        "📈 מעקב שוק ועקומים",
+        "🌍 מניפה ומאקרו",
         "🔬 מחקר",
         "⚙️ נתונים",
     ]
@@ -89,7 +102,13 @@ with tab_trade:
     render_decision_hero(decision_result, spot_price=last_close_val_init)
 
 # -----------------------------------------------------------------------------
-# TAB 2: TRACK & VOLATILITY — מעקב תנודתיות ועקומים
+# TAB 2: TRACK RECORD — ביצועי עבר ואימות המלצות
+# -----------------------------------------------------------------------------
+with tab_history:
+    render_track_record_dashboard()
+
+# -----------------------------------------------------------------------------
+# TAB 3: TRACK & VOLATILITY — מעקב תנודתיות ועקומים
 # -----------------------------------------------------------------------------
 with tab_track:
     st.subheader("📈 מעקב תנודתיות ועקום מבנה שוק (Volatility Term Structure)")
@@ -568,6 +587,11 @@ with tab_data:
     with col_l3:
         st.markdown("**⚡ נגזרים ופוזיציות פתוחות**")
         st.link_button(
+            "📊 תרשים פוט/קול ומחזורים (Put/Call Chart)",
+            "https://market.tase.co.il/he/market_data/derivatives/01/putcallchart",
+            use_container_width=True,
+        )
+        st.link_button(
             "דף שוק הנגזרים הראשי",
             "https://www.tase.co.il/he/market_data/derivatives",
             use_container_width=True,
@@ -585,15 +609,15 @@ with tab_data:
 
     st.markdown("---")
     with st.form("tase_csv_upload", clear_on_submit=True):
-        st.markdown("##### 📥 העלאת קבצי CSV יומיים (זיהוי תוכן אוטומטי 🤖)")
+        st.markdown("##### 📥 העלאת קבצי CSV / Excel יומיים (זיהוי תוכן אוטומטי 🤖)")
         st.caption("אין חשיבות לשם הקובץ או לשדה שבו הוא הועלה — המערכת מנתחת את הטקסט שבתוך הקובץ ומשייכת אותו אוטומטית למדד הנכון.")
         
         multi_files = st.file_uploader(
             "📁 גרירת כל הקבצים ביחד (העלאה מרובה מהירה)",
-            type=("csv",),
+            type=("csv", "xlsx", "xls", "txt"),
             accept_multiple_files=True,
             key="multi_csv",
-            help="ניתן לסמן את כל קובצי ה-CSV שהורדתם ולגרור אותם לכאן בבת אחת!",
+            help="ניתן לסמן את כל קובצי ה-CSV/Excel שהורדתם ולגרור אותם לכאן בבת אחת!",
         )
         
         st.markdown("או בחירה בשדות נפרדים:")
@@ -613,65 +637,24 @@ with tab_data:
             "קובץ תל גוב-כללי", type=("csv",), key="tel_gov_all_csv"
         )
 
-        u_col5, _ = st.columns(2)
+        u_col5, u_col6 = st.columns(2)
         tel_bond60_file = u_col5.file_uploader(
             "קובץ תל-בונד 60", type=("csv",), key="tel_bond60_csv"
+        )
+        putcall_file = u_col6.file_uploader(
+            "קובץ פוזיציות פתוחות / Put-Call Chart",
+            type=("csv", "xlsx", "xls", "txt"),
+            key="putcall_csv",
+            help="העלאת קובץ פוזיציות פתוחות ותרשים פוט/קול (מדד ת״א-35)",
         )
 
         submitted = st.form_submit_button(
             "🚀 בדיקה, זיהוי אוטומטי ועדכון כל המקורות", type="primary", use_container_width=True
         )
     def _identify_series(raw: bytes, filename: str = "", default_hint: str = "TA35") -> str:
-        sample = ""
-        for enc in ("utf-8-sig", "utf-8", "windows-1255", "iso-8859-8", "utf-16"):
-            try:
-                sample = raw[:4096].decode(enc)
-                break
-            except UnicodeDecodeError:
-                continue
-
-        lines = sample.splitlines()[:10]
-        header_text = " ".join(lines).lower().replace("-", " ").replace("_", " ").replace("״", '"')
-        full_text = (header_text + " " + filename).lower().replace("-", " ").replace("_", " ").replace("״", '"')
-
-        # Check explicit index codes and keywords
-        if any(k in full_text for k in ("vta35", "vta 35", " 598 ", "598", "תנודתיות", "volatility")):
-            return "VTA35"
-        if any(k in full_text for k in ("banks", "בנקים 5", "בנקים", " 164 ", "164")):
-            return "TA_BANKS5"
-        if any(k in full_text for k in ("bond 60", "bond60", "בונד 60", "בונד60", " 709 ", "709")):
-            return "TEL_BOND60"
-        if any(k in full_text for k in ("gov all", "govall", "תל גוב כללי", "גוב כללי", " 601 ", "601")):
-            return "TEL_GOV_ALL"
-        if any(k in full_text for k in ("usd/ils", "usdils", "שער דולר", "דולר")):
-            return "USDILS"
-        if any(k in full_text for k in ("ta 35", "ta35", 'ת"א 35', "תל אביב 35", " 142 ", "142")):
-            return "TA35"
-
-        # Price heuristic fallback from numeric values in CSV
-        try:
-            for line in lines[3:]:
-                parts = line.split(",")
-                if len(parts) >= 2:
-                    for p in parts[1:]:
-                        try:
-                            val = float(p.strip())
-                            if 2000.0 <= val <= 6500.0:
-                                return "TA35"
-                            elif 5000.0 <= val <= 18000.0:
-                                return "TA_BANKS5"
-                            elif 450.0 <= val <= 550.0:
-                                return "TEL_GOV_ALL"
-                            elif 380.0 <= val <= 450.0:
-                                return "TEL_BOND60"
-                            elif 8.0 <= val <= 60.0:
-                                return "VTA35"
-                        except ValueError:
-                            continue
-        except Exception:
-            pass
-
-        return default_hint
+        from ta35_dashboard.services.tase_upload import auto_detect_series
+        detected = auto_detect_series(raw, filename=filename)
+        return detected or default_hint
 
     if submitted:
         uploaded_items = []
@@ -688,6 +671,8 @@ with tab_data:
             uploaded_items.append((tel_gov_all_file, "TEL_GOV_ALL"))
         if tel_bond60_file is not None:
             uploaded_items.append((tel_bond60_file, "TEL_BOND60"))
+        if putcall_file is not None:
+            uploaded_items.append((putcall_file, "PUTCALL_CHART"))
 
         if not uploaded_items:
             st.error("יש לבחור לפחות קובץ נתונים אחד לפני העדכון.")
@@ -700,6 +685,7 @@ with tab_data:
                 "TA_BANKS5": "ת״א בנקים-5",
                 "TEL_GOV_ALL": "תל גוב-כללי",
                 "TEL_BOND60": "תל-בונד 60",
+                "PUTCALL_CHART": "תרשים Put/Call ופוזיציות",
             }
             for f, hint in uploaded_items:
                 b = f.getvalue()
@@ -720,7 +706,9 @@ with tab_data:
                 st.error(f"העדכון לא בוצע: {error}")
             else:
                 details = " · ".join(
-                    f"{symbol_names.get(symbol, symbol)}: {result.observations[symbol]:,} ימים חדשים"
+                    f"{symbol_names.get(symbol, symbol)}: {result.observations[symbol]:,} סטרייקים עודכנו"
+                    if symbol == "PUTCALL_CHART"
+                    else f"{symbol_names.get(symbol, symbol)}: {result.observations[symbol]:,} ימים חדשים"
                     for symbol in result.observations
                 )
                 st.cache_data.clear()
@@ -763,6 +751,257 @@ with tab_data:
                     st.warning("אין עדכונים נוספים לביטול.")
             except Exception as e:
                 st.error(f"שגיאה בשחזור: {e}")
+
+    # -------------------------------------------------------------------------
+    # Put/Call Chart & Open Positions Live Analysis
+    # -------------------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🎯 ניתוח תרשים יחס פוט/קול ופוזיציות פתוחות (TASE Put/Call Chart - 01)")
+    
+    from ta35_dashboard.analytics.putcall_service import load_latest_putcall_snapshot
+    latest_putcall = load_latest_putcall_snapshot(SETTINGS.database_path)
+
+    if latest_putcall:
+        pc_col1, pc_col2, pc_col3, pc_col4 = st.columns(4)
+        
+        if latest_putcall.pcr_oi > 1.25:
+            sentiment_label = "🐻 סנטימנט דובי קיצוני / פאניקה (איתות קונטרריאני שורי)"
+        elif latest_putcall.pcr_oi < 0.70:
+            sentiment_label = "🐮 סנטימנט שורי / שאננות יתר (סיכון לתיקון טכני)"
+        else:
+            sentiment_label = "⚖️ שיווי משקל ניטרלי"
+
+        spot_price = last_close_val_init
+        dist_pain = ((spot_price - latest_putcall.max_pain_strike) / spot_price * 100.0) if spot_price > 0 else 0.0
+        dist_pain_str = f"{dist_pain:+.1f}% מהספוט" if spot_price > 0 else ""
+
+        with pc_col1:
+            st.metric(
+                "יחס פוט/קול פוזיציות (PCR OI)",
+                f"{latest_putcall.pcr_oi:.2f}",
+                delta=f"פוט: {latest_putcall.total_put_oi:,.0f} | קול: {latest_putcall.total_call_oi:,.0f}",
+                delta_color="off",
+            )
+        with pc_col2:
+            st.metric(
+                "יחס פוט/קול מחזורים (PCR Vol)",
+                f"{latest_putcall.pcr_vol:.2f}",
+                delta=f"פוט: {latest_putcall.total_put_vol:,.0f} | קול: {latest_putcall.total_call_vol:,.0f}",
+                delta_color="off",
+            )
+        with pc_col3:
+            st.metric(
+                "שער כאב מקסימלי (Max Pain)",
+                f"{latest_putcall.max_pain_strike:,.0f}",
+                delta=dist_pain_str,
+                delta_color="off",
+            )
+        with pc_col4:
+            st.metric(
+                "קירות אופציות (Walls)",
+                f"🛡️ תמיכה: {latest_putcall.put_wall_strike:,.0f}",
+                delta=f"🧱 התנגדות: {latest_putcall.call_wall_strike:,.0f}",
+                delta_color="off",
+            )
+
+        st.caption(f"📌 {sentiment_label} | נתוני פוזיציות מעודכנים ל: {latest_putcall.as_of_date}")
+
+        strikes_df = pd.DataFrame([
+            {
+                "שער מימוש (Strike)": r.strike,
+                "פוזיציות פתוחות Call": r.call_oi,
+                "פוזיציות פתוחות Put": r.put_oi,
+                "מחזור Call": r.call_vol,
+                "מחזור Put": r.put_vol,
+            }
+            for r in latest_putcall.strikes
+        ])
+        
+        import plotly.graph_objects as go
+        fig_pc = go.Figure()
+        fig_pc.add_trace(go.Bar(
+            x=strikes_df["שער מימוש (Strike)"],
+            y=strikes_df["פוזיציות פתוחות Call"],
+            name="קולים (Call OI)",
+            marker_color="#1976d2",
+            opacity=0.85,
+        ))
+        fig_pc.add_trace(go.Bar(
+            x=strikes_df["שער מימוש (Strike)"],
+            y=strikes_df["פוזיציות פתוחות Put"],
+            name="פוטים (Put OI)",
+            marker_color="#d32f2f",
+            opacity=0.85,
+        ))
+        fig_pc.add_vline(
+            x=latest_putcall.max_pain_strike,
+            line_width=2.5,
+            line_dash="dash",
+            line_color="#f57f17",
+            annotation_text=f"Max Pain ({latest_putcall.max_pain_strike:,.0f})",
+            annotation_position="top left",
+        )
+        if spot_price > 0:
+            fig_pc.add_vline(
+                x=spot_price,
+                line_width=2,
+                line_dash="solid",
+                line_color="#2e7d32",
+                annotation_text=f"Spot ת״א-35 ({spot_price:,.0f})",
+                annotation_position="top right",
+            )
+
+        fig_pc.update_layout(
+            barmode="group",
+            title="התפלגות פוזיציות פתוחות (Call OI מול Put OI) לפי שער מימוש",
+            xaxis_title="שער מימוש (Strike)",
+            yaxis_title="כמות חוזים פתוחים",
+            template="plotly_white",
+            height=380,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin=dict(l=20, r=20, t=50, b=20),
+        )
+        st.plotly_chart(fig_pc, use_container_width=True)
+
+        with st.expander("🔍 צפייה בטבלת הנתונים המפורטת לפי שער מימוש"):
+            st.dataframe(strikes_df, hide_index=True, use_container_width=True)
+
+        # ---------------------------------------------------------------------
+        # Historical Open Interest Changes (Delta OI) Analysis
+        # ---------------------------------------------------------------------
+        from ta35_dashboard.analytics.putcall_service import (
+            load_historical_putcall_snapshots,
+            analyze_open_interest_changes,
+        )
+        history_snaps = load_historical_putcall_snapshots(SETTINGS.database_path, limit=2)
+        if len(history_snaps) >= 2:
+            st.markdown("---")
+            st.markdown("##### 🔄 ניתוח שינויים בפוזיציות פתוחות (ΔOI) מול עדכון קודם")
+            prev_snap = history_snaps[1]
+            oi_change = analyze_open_interest_changes(latest_putcall, prev_snap, spot_price=spot_price)
+            st.caption(f"השוואת פוזיציות פתוחות בין תאריך {oi_change.prev_date} לתאריך {oi_change.current_date}")
+
+            d_col1, d_col2, d_col3, d_col4 = st.columns(4)
+            with d_col1:
+                st.metric(
+                    "שינוי ב-Call OI",
+                    f"{oi_change.delta_total_call_oi:+,.0f}",
+                    delta="פתיחת חוזים" if oi_change.delta_total_call_oi > 0 else "סגירת חוזים",
+                    delta_color="normal" if oi_change.delta_total_call_oi > 0 else "inverse",
+                )
+            with d_col2:
+                st.metric(
+                    "שינוי ב-Put OI",
+                    f"{oi_change.delta_total_put_oi:+,.0f}",
+                    delta="פתיחת חוזים" if oi_change.delta_total_put_oi > 0 else "סגירת חוזים",
+                    delta_color="normal" if oi_change.delta_total_put_oi > 0 else "inverse",
+                )
+            with d_col3:
+                st.metric(
+                    "שינוי ביחס פוט/קול",
+                    f"{oi_change.delta_pcr_oi:+.2f}",
+                    delta="עלייה בהגנות" if oi_change.delta_pcr_oi > 0 else "ירידה בהגנות",
+                    delta_color="off",
+                )
+            with d_col4:
+                st.metric(
+                    "תזוזת Max Pain",
+                    f"{oi_change.delta_max_pain:+,.0f} נק׳",
+                    delta=f"שער נוכחי: {latest_putcall.max_pain_strike:,.0f}",
+                    delta_color="normal" if oi_change.delta_max_pain > 0 else "inverse",
+                )
+
+            # Institutional Insights Container
+            insights_html = "<br>• ".join(["• " + item for item in oi_change.detailed_insights])
+            st.markdown(
+                f"""
+                <div style="background-color: #f0f7ff; border: 1.5px solid #2196f3; border-radius: 8px; padding: 14px; margin-top: 10px; margin-bottom: 14px;">
+                    <div style="font-weight: bold; font-size: 1.05em; color: #0d47a1; margin-bottom: 8px;">
+                        🎯 אבחון מיצוב מוסדי: {oi_change.primary_regime_sentiment}
+                    </div>
+                    <div style="font-size: 0.9em; color: #333; line-height: 1.6;">
+                        {insights_html}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Plotly Delta Bar Chart
+            delta_df = pd.DataFrame([
+                {
+                    "שער מימוש (Strike)": s.strike,
+                    "Δ Call OI": s.delta_call_oi,
+                    "Δ Put OI": s.delta_put_oi,
+                    "שינוי נטו (Call - Put)": s.net_delta_oi,
+                }
+                for s in oi_change.strike_deltas
+                if abs(s.delta_call_oi) > 0 or abs(s.delta_put_oi) > 0
+            ])
+
+            if not delta_df.empty:
+                fig_delta = go.Figure()
+                fig_delta.add_trace(go.Bar(
+                    x=delta_df["שער מימוש (Strike)"],
+                    y=delta_df["Δ Call OI"],
+                    name="שינוי ב-Call OI",
+                    marker_color="#1976d2",
+                    opacity=0.85,
+                ))
+                fig_delta.add_trace(go.Bar(
+                    x=delta_df["שער מימוש (Strike)"],
+                    y=delta_df["Δ Put OI"],
+                    name="שינוי ב-Put OI",
+                    marker_color="#d32f2f",
+                    opacity=0.85,
+                ))
+                if spot_price > 0:
+                    fig_delta.add_vline(
+                        x=spot_price,
+                        line_width=2,
+                        line_dash="dash",
+                        line_color="#2e7d32",
+                        annotation_text=f"Spot ({spot_price:,.0f})",
+                        annotation_position="top right",
+                    )
+                fig_delta.update_layout(
+                    barmode="group",
+                    title="שינוי נטו בפוזיציות פתוחות (ΔOI) לפי שער מימוש",
+                    xaxis_title="שער מימוש (Strike)",
+                    yaxis_title="שינוי בכמות החוזים (תוספת / סגירה)",
+                    template="plotly_white",
+                    height=340,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    margin=dict(l=20, r=20, t=50, b=20),
+                )
+                st.plotly_chart(fig_delta, use_container_width=True)
+
+                with st.expander("📋 מוקדי הפעילות הגדולים (Top Strikes by ΔOI)"):
+                    c_sub1, c_sub2 = st.columns(2)
+                    with c_sub1:
+                        st.markdown("**🟢 סטרייקים עם תוספת ה-Call הגדולה ביותר:**")
+                        if oi_change.top_call_accumulations:
+                            top_c_df = pd.DataFrame([
+                                {"סטרייק": s.strike, "תוספת חוזים": f"+{s.delta_call_oi:,.0f}", "סך חוזים נוכחי": f"{s.current_call_oi:,.0f}"}
+                                for s in oi_change.top_call_accumulations
+                            ])
+                            st.dataframe(top_c_df, hide_index=True, use_container_width=True)
+                        else:
+                            st.caption("לא נרשמה תוספת קולים.")
+                    with c_sub2:
+                        st.markdown("**🔴 סטרייקים עם תוספת ה-Put הגדולה ביותר:**")
+                        if oi_change.top_put_accumulations:
+                            top_p_df = pd.DataFrame([
+                                {"סטרייק": s.strike, "תוספת חוזים": f"+{s.delta_put_oi:,.0f}", "סך חוזים נוכחי": f"{s.current_put_oi:,.0f}"}
+                                for s in oi_change.top_put_accumulations
+                            ])
+                            st.dataframe(top_p_df, hide_index=True, use_container_width=True)
+                        else:
+                            st.caption("לא נרשמה תוספת פוטים.")
+        else:
+            st.caption("💡 לאחר העלאת קובץ נוסף ביום הבא, יוצג כאן אוטומטית ניתוח שינויי פוזיציות יומיים (ΔOI) ותרשים שינויים לפי סטרייק.")
+    else:
+        st.info("ℹ️ טרם הועלו נתוני פוזיציות פתוחות ותרשים Put/Call. ניתן להוריד את הנתונים ישירות מאתר הבורסה בקישור למעלה ולהעלותם בטופס העדכון.")
 
     st.markdown("---")
     st.subheader("📊 חיווי סטטוס סדרות נתונים במערכת")
