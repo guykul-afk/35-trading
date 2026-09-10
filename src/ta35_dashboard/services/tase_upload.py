@@ -186,42 +186,47 @@ def auto_detect_series(raw: bytes, filename: str = "") -> str:
         except UnicodeDecodeError:
             continue
 
-    # Look only at the first 3 lines to avoid matching numbers in the data rows (like market cap)
-    lines = sample.splitlines()[:3]
-    header_text = " ".join(lines).lower()
-    full_text = (header_text + " " + filename).lower()
+    # Look only at the first 2 lines (title and date range) to avoid matching numbers in the data rows
+    lines = sample.splitlines()[:2]
+    header_text = " ".join(lines).lower().replace("״", '"').replace("-", " ")
+    filename_text = filename.lower().replace("-", " ").replace("_", " ")
+    full_text = header_text + " " + filename_text
 
-    # 1. VTA35 (Implied volatility index)
-    if any(k in full_text for k in ("vta35", "vta-35", "vta 35", "598", "תנודתיות", "volatility")):
+    # 0. Put/Call Chart or Open Positions (TASE derivatives put/call)
+    if any(k in full_text or k in sample[:1000].lower() for k in ("putcall", "put_call", "put call", "פוזיציות פתוחות", "מחזורים ופוזיציות", "פתיחות קול", "פתיחות פוט", "call oi", "put oi", "סטרייק", "שער מימוש", "putcallchart")):
+        return "PUTCALL_CHART"
+
+    # 1. VTA35 (Implied volatility index - check before TA35 so 'ta35' substring doesn't match 'vta35')
+    if any(k in full_text for k in ("vta35", "vta 35", "598", "תנודתיות", "volatility")):
         return "VTA35"
 
-    # 2. TA-Banks 5
-    if any(k in full_text for k in ("banks", "בנקים", "164", "147")):
-        return "TA_BANKS5"
+    # 2. TA-35 (Flagship index)
+    if any(k in full_text for k in ('ת"א 35', 'תא 35', 'ta 35', 'ta35', 'תל אביב 35', ' 142 ', '142')):
+        return "TA35"
 
-    # 3. Tel-Gov 10Y+
-    if any(k in full_text for k in ("gov 10", "gov-10", "gov10", "10y", "10+", "שקלי 10", "607")):
-        return "TEL_GOV_10Y"
-
-    # 4. Tel-Gov 0-2
-    if any(k in full_text for k in ("gov 0-2", "gov 2", "0-2", "2y", "שקלי 0-2", "603")):
-        return "TEL_GOV_2Y"
-
-    # 5. Tel-Bond 60
-    if any(k in full_text for k in ("bond 60", "bond-60", "bond60", "בונד 60", "בונד-60", "703")):
+    # 3. Tel-Bond 60
+    if any(k in full_text for k in ("bond 60", "bond60", "בונד 60", "בונד60", "709", "703")):
         return "TEL_BOND60"
 
-    # 6. Tel-Gov All
-    if any(k in full_text for k in ("gov all", "gov-all", "govall", "תל גוב-כללי", "תל גוב כללי", "תל-גוב כללי", "גוב כללי", "תל גוב", "601")):
+    # 4. Tel-Gov All / All-Bond
+    if any(k in full_text for k in ("all bond", "allbond", "gov all", "govall", "תל גוב כללי", "תל גוב", "גוב כללי", "כללי", "601")):
         return "TEL_GOV_ALL"
 
-    # 7. USD/ILS
+    # 5. TA-Banks 5
+    if any(k in full_text for k in ("banks", "בנקים", " 164 ", "164")):
+        return "TA_BANKS5"
+
+    # 6. Tel-Gov 10Y+
+    if any(k in full_text for k in ("gov 10", "gov10", "10y", "10+", "שקלי 10", "607")):
+        return "TEL_GOV_10Y"
+
+    # 7. Tel-Gov 0-2
+    if any(k in full_text for k in ("gov 0 2", "gov 2", "0 2", "2y", "שקלי 0 2", "603")):
+        return "TEL_GOV_2Y"
+
+    # 8. USD/ILS
     if any(k in full_text for k in ("usd/ils", "usdils", "שער דולר", "דולר")):
         return "USDILS"
-
-    # 8. TA-35
-    if any(k in full_text for k in ("ta-35", "ta 35", "ta35", "ת\"א-35", "ת״א-35", "ת\"א 35", "ת״א 35", "תל אביב 35", "142")):
-        return "TA35"
 
     return "TA35"
 
@@ -245,6 +250,7 @@ def import_tase_uploads(
         "TEL_GOV_10Y",
         "TEL_GOV_2Y",
         "TEL_BOND60",
+        "PUTCALL_CHART",
     }
     
     raw_payloads = {key: raw for key, raw in uploads.items() if raw}
@@ -260,6 +266,24 @@ def import_tase_uploads(
 
     database_path = Path(database_path)
     downloads_dir = Path(downloads_dir)
+
+    # Process Put/Call Chart data if present
+    putcall_raw = payloads.pop("PUTCALL_CHART", None)
+    putcall_count = 0
+    if putcall_raw:
+        from ta35_dashboard.analytics.putcall_service import parse_putcall_data, save_putcall_snapshot
+        pc_result = parse_putcall_data(putcall_raw, filename="putcall_data.csv")
+        save_putcall_snapshot(database_path, pc_result)
+        putcall_count = len(pc_result.strikes)
+
+    if not payloads:
+        if putcall_count > 0:
+            return TaseUploadResult(
+                observations={"PUTCALL_CHART": putcall_count},
+                latest_dates={"PUTCALL_CHART": datetime.now(UTC).date()},
+            )
+        raise ValueError("לא נבחרו קבצים תקינים לעדכון.")
+
     current = SQLiteRepository(database_path)
 
     existing_ta35 = current.bar_history("TA35", 1)
@@ -297,8 +321,12 @@ def import_tase_uploads(
                     if existing
                     else bars[-1].session_date
                 )
+            obs = {symbol: 0 for symbol in all_series}
+            if putcall_count > 0:
+                obs["PUTCALL_CHART"] = putcall_count
+                latest_dates["PUTCALL_CHART"] = datetime.now(UTC).date()
             return TaseUploadResult(
-                observations={symbol: 0 for symbol in all_series},
+                observations=obs,
                 latest_dates=latest_dates,
             )
 
@@ -351,16 +379,22 @@ def import_tase_uploads(
             os.replace(staged_csv_name, target)
 
         final_repo = SQLiteRepository(database_path)
+        obs = {
+            symbol: len(deltas[symbol][1]) if symbol in deltas else 0
+            for symbol in all_series
+        }
+        latest = {
+            symbol: final_repo.bar_history(symbol, 1)[-1].session_date
+            for symbol in all_series
+            if final_repo.bar_history(symbol, 1)
+        }
+        if putcall_count > 0:
+            obs["PUTCALL_CHART"] = putcall_count
+            latest["PUTCALL_CHART"] = datetime.now(UTC).date()
+
         return TaseUploadResult(
-            observations={
-                symbol: len(deltas[symbol][1]) if symbol in deltas else 0
-                for symbol in all_series
-            },
-            latest_dates={
-                symbol: final_repo.bar_history(symbol, 1)[-1].session_date
-                for symbol in all_series
-                if final_repo.bar_history(symbol, 1)
-            },
+            observations=obs,
+            latest_dates=latest,
         )
     finally:
         if staged_path is not None:

@@ -61,6 +61,8 @@ def init_shadow_log_db(db_path: str | Path) -> None:
             """
         )
         conn.commit()
+        from ta35_dashboard.decision_engine.evaluator import init_evaluation_schema
+        init_evaluation_schema(conn)
     finally:
         conn.close()
 
@@ -129,8 +131,39 @@ def log_eod_recommendation(rec: StrategyRecommendation, db_path: str | Path) -> 
                 json.dumps(asdict(rec), default=str),
             ),
         )
+        rec_id = cursor.lastrowid
         conn.commit()
+
+        # Enqueue and trigger evaluation resolution
+        try:
+            from ta35_dashboard.decision_engine.evaluator import (
+                enqueue_recommendation_evaluations,
+                resolve_pending_evaluations,
+                _get_spot_at_or_before,
+            )
+            spot_t0 = _get_spot_at_or_before(conn, rec.as_of_date)
+            if spot_t0 is not None and rec_id is not None:
+                enqueue_recommendation_evaluations(
+                    rec_id=rec_id,
+                    as_of_date=rec.as_of_date,
+                    direction_view=rec.direction_view,
+                    direction_prob=rec.direction_probability,
+                    volatility_view=rec.volatility_view,
+                    forecast_rv=rec.forecast_rv,
+                    primary_family=rec.primary_strategy_family.value,
+                    spot_t0=float(spot_t0),
+                    conn=conn,
+                )
+        except Exception as eval_err:
+            logger.warning("Could not enqueue evaluation for rec %s: %s", rec_id, eval_err)
+
     except Exception as e:
         logger.error("Failed writing shadow EOD recommendation to log: %s", e)
     finally:
         conn.close()
+
+    try:
+        from ta35_dashboard.decision_engine.evaluator import resolve_pending_evaluations
+        resolve_pending_evaluations(db_path)
+    except Exception as res_err:
+        logger.warning("Could not resolve pending evaluations: %s", res_err)

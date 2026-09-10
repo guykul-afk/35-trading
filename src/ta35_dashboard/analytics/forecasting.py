@@ -185,11 +185,13 @@ def predict_live_direction(
     range_position: float | None = None,
     flight_to_safety: float | None = None,
     banks_rs: float | None = None,
+    pcr_oi: float | None = None,
+    max_pain_distance_pct: float | None = None,
 ) -> tuple[float, float]:
     """Live Directional Probability Estimator P(up).
     
     Computes a continuous, calibrated multi-factor probability from live market trend,
-    range position, Risk-On/Off asset flows, and sector leadership.
+    range position, Risk-On/Off asset flows, sector leadership, and options market positioning (PCR / Max Pain).
     
     Returns:
         tuple[float, float]: (prob_up, confidence)
@@ -197,29 +199,63 @@ def predict_live_direction(
     if market_trend_score is None:
         return 0.50, 0.0
 
-    # Composite score from weighted factors:
-    # 1. Market trend score (-1.0 to +1.0): weight 0.50
-    score = 0.50 * float(market_trend_score)
+    has_options_data = (pcr_oi is not None and math.isfinite(pcr_oi)) or (
+        max_pain_distance_pct is not None and math.isfinite(max_pain_distance_pct)
+    )
 
-    # 2. Range position (0.0 to 1.0, neutral at 0.5): weight 0.20
+    if has_options_data:
+        # Balanced weights reserving 15% for options market microstructure & pinning
+        w_trend = 0.40
+        w_range = 0.15
+        w_safety = 0.15
+        w_banks = 0.15
+        w_options = 0.15
+    else:
+        w_trend = 0.50
+        w_range = 0.20
+        w_safety = 0.15
+        w_banks = 0.15
+        w_options = 0.0
+
+    score = w_trend * float(market_trend_score)
+
     if range_position is not None and math.isfinite(range_position):
-        score += 0.20 * (2.0 * (range_position - 0.5))
+        score += w_range * (2.0 * (range_position - 0.5))
 
-    # 3. Flight to safety / Risk-On (-2.0 to +2.0): weight 0.15
     if flight_to_safety is not None and math.isfinite(flight_to_safety):
         clamped_safety = max(-2.0, min(2.0, flight_to_safety))
-        score += 0.15 * (clamped_safety / 2.0)
+        score += w_safety * (clamped_safety / 2.0)
 
-    # 4. Banks Relative Strength (-0.05 to +0.05): weight 0.15
     if banks_rs is not None and math.isfinite(banks_rs):
         clamped_banks = max(-0.05, min(0.05, banks_rs))
-        score += 0.15 * (clamped_banks / 0.05)
+        score += w_banks * (clamped_banks / 0.05)
+
+    if has_options_data:
+        options_subscore = 0.0
+        # 1. Contrarian PCR OI Signal (-1.0 to +1.0)
+        # Neutral at 1.0; PCR > 1.0 indicates high put accumulation (oversold panic -> bullish contrarian);
+        # PCR < 1.0 indicates complacency (overbought greed -> bearish contrarian).
+        if pcr_oi is not None and math.isfinite(pcr_oi):
+            pcr_signal = (pcr_oi - 1.0) / 0.50
+            pcr_signal = max(-1.0, min(1.0, pcr_signal))
+            options_subscore += 0.55 * pcr_signal
+
+        # 2. Max Pain Gravitational Pull (-1.0 to +1.0)
+        # max_pain_distance_pct = (Max Pain Strike - Spot Price) / Spot Price * 100
+        # Positive distance means Spot is below Max Pain -> gravitational pull upward (+)
+        # Negative distance means Spot is above Max Pain -> gravitational pull downward (-)
+        if max_pain_distance_pct is not None and math.isfinite(max_pain_distance_pct):
+            pain_signal = max(-1.0, min(1.0, max_pain_distance_pct / 3.0))
+            options_subscore += 0.45 * pain_signal
+
+        score += w_options * options_subscore
 
     # Calibrate into probability via logistic sigmoid (P_up between 25% and 75%)
     k = 1.6  # scaling sensitivity
     prob_up = 1.0 / (1.0 + math.exp(-k * score))
     
-    # Confidence scales with how far from 50% the prediction is
-    confidence = min(0.95, max(0.60, 0.60 + 0.70 * abs(prob_up - 0.50)))
+    # Confidence scales with how far from 50% the prediction is, boosted slightly when options data confirms
+    conf_boost = 0.03 if has_options_data else 0.0
+    confidence = min(0.95, max(0.60, 0.60 + 0.70 * abs(prob_up - 0.50) + conf_boost))
     return round(prob_up, 3), round(confidence, 2)
 
