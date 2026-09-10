@@ -193,7 +193,33 @@ def auto_detect_series(raw: bytes, filename: str = "") -> str:
     full_text = header_text + " " + filename_text
 
     # 0. Put/Call Chart or Open Positions (TASE derivatives put/call)
-    if any(k in full_text or k in sample[:1000].lower() for k in ("putcall", "put_call", "put call", "פוזיציות פתוחות", "מחזורים ופוזיציות", "פתיחות קול", "פתיחות פוט", "call oi", "put oi", "סטרייק", "שער מימוש", "putcallchart")):
+    sample_low = sample[:2048].lower()
+    if filename == "PUTCALL_CHART" or any(
+        k in full_text or k in sample_low
+        for k in (
+            "putvscall",
+            "put vs call",
+            "put/call",
+            "putcall",
+            "פוזיציות פתוחות",
+            "מחזורים ופוזיציות",
+            "פתיחות קול",
+            "פתיחות פוט",
+            "call oi",
+            "put oi",
+            "סטרייק",
+            "שער מימוש",
+            "מחיר מימוש",
+            "מחזור ביחידות",
+            "תאריך פקיעה",
+            "פקיעה:",
+            "(call)",
+            "(put)",
+            "putcallchart",
+            "put_call",
+            "put call",
+        )
+    ):
         return "PUTCALL_CHART"
 
     # 1. VTA35 (Implied volatility index - check before TA35 so 'ta35' substring doesn't match 'vta35')
@@ -260,8 +286,11 @@ def import_tase_uploads(
     # Automatically analyze content of each uploaded file and map to the true series symbol
     payloads: dict[str, bytes] = {}
     for key, raw in raw_payloads.items():
-        detected = auto_detect_series(raw, filename=key)
-        symbol = detected if detected in SUPPORTED else (key if key in SUPPORTED else "TA35")
+        if key == "PUTCALL_CHART":
+            symbol = "PUTCALL_CHART"
+        else:
+            detected = auto_detect_series(raw, filename=key)
+            symbol = detected if detected in SUPPORTED else (key if key in SUPPORTED else "TA35")
         payloads[symbol] = raw
 
     database_path = Path(database_path)

@@ -20,9 +20,11 @@ class ServiceTests(unittest.TestCase):
             )
             self.assertIsInstance(bundle, DashboardBundle)
             self.assertEqual(bundle.meta.market_data_type, "demo")
-            self.assertEqual(len(bundle.cards), 23)
+            self.assertEqual(len(bundle.cards), len(CARD_DEFINITIONS))
 
-            self.assertEqual(len(bundle.health), 6)
+
+            self.assertEqual(len(bundle.health), 10)
+
             self.assertTrue(bundle.ta35_closes)
             self.assertIsNotNone(bundle.forecast_volatility)
             self.assertIsNotNone(bundle.implied_volatility)
@@ -69,7 +71,8 @@ class ServiceTests(unittest.TestCase):
             load_dashboard_bundle(SQLiteRepository(Path(directory) / "empty.sqlite3"))
 
     def test_every_metric_card_has_expanded_explanation(self):
-        self.assertEqual(len(CARD_DEFINITIONS), 23)
+        self.assertEqual(len(CARD_DEFINITIONS), 33)
+
 
         for key, _label, _format, help_text in CARD_DEFINITIONS:
             with self.subTest(key=key):

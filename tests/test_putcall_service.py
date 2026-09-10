@@ -85,3 +85,27 @@ def test_analyze_open_interest_changes():
     assert "גידור" in res.primary_regime_sentiment or "ביטוחי אסון" in res.primary_regime_sentiment
     assert len(res.detailed_insights) >= 1
 
+
+def test_parse_tase_putvscall_chart_export():
+    raw = """
+מחזור ביחידות לפי מחיר מימוש - סוג עדכון:  חודשי -  תאריך פקיעה: 27/09/2026,,,
+נכון ל- 09/09/2026
+מחיר מימוש (Call),מחיר מימוש (Put),מחזור ביחידות  (Call),מחזור ביחידות  (Put)
+4100.00,4100.00,20,100
+4120.00,4120.00,50,80
+4140.00,4140.00,100,30
+4160.00,4160.00,150,10
+""".strip().encode("utf-8-sig")
+
+    assert auto_detect_series(raw, "PutVsCallChartData.csv") == "PUTCALL_CHART"
+    res = parse_putcall_data(raw, "PutVsCallChartData.csv")
+    assert len(res.strikes) == 4
+    assert res.as_of_date == "2026-09-09"
+    assert "27/09/2026" in res.expiry_label
+    assert res.total_call_vol == 320.0
+    assert res.total_put_vol == 220.0
+    assert abs(res.pcr_vol - (220.0 / 320.0)) < 0.001
+    assert res.call_wall_strike == 4160.0
+    assert res.put_wall_strike == 4100.0
+
+
