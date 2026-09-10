@@ -76,7 +76,9 @@ class DecisionEngineEODTests(unittest.TestCase):
             market_state="ניטרלי",
         )
         self.assertEqual(primary, StrategyFamily.LONG_STRADDLE)
-        self.assertIn("מתרחבת", vol_view)
+        self.assertIn("תנודתיות", vol_view)
+
+
 
     def test_eod_statistical_legs_computation(self):
         """Verify that compute_eod_statistical_legs produces valid strikes and sigma offsets."""

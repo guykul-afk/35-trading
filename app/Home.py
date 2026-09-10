@@ -653,8 +653,13 @@ with tab_data:
         )
     def _identify_series(raw: bytes, filename: str = "", default_hint: str = "TA35") -> str:
         from ta35_dashboard.services.tase_upload import auto_detect_series
+        if default_hint == "PUTCALL_CHART":
+            return "PUTCALL_CHART"
         detected = auto_detect_series(raw, filename=filename)
+        if default_hint and detected == "TA35" and default_hint != "TA35":
+            return default_hint
         return detected or default_hint
+
 
     if submitted:
         uploaded_items = []
@@ -764,24 +769,36 @@ with tab_data:
     if latest_putcall:
         pc_col1, pc_col2, pc_col3, pc_col4 = st.columns(4)
         
-        if latest_putcall.pcr_oi > 1.25:
-            sentiment_label = "🐻 סנטימנט דובי קיצוני / פאניקה (איתות קונטרריאני שורי)"
-        elif latest_putcall.pcr_oi < 0.70:
-            sentiment_label = "🐮 סנטימנט שורי / שאננות יתר (סיכון לתיקון טכני)"
+        has_oi = (latest_putcall.total_call_oi > 0 or latest_putcall.total_put_oi > 0)
+        active_pcr = latest_putcall.pcr_oi if has_oi else latest_putcall.pcr_vol
+        pcr_type_label = "PCR פוזיציות" if has_oi else "PCR מחזורים"
+
+        if active_pcr > 1.25:
+            sentiment_label = f"🐻 סנטימנט דובי קיצוני / פאניקה ({pcr_type_label} {active_pcr:.2f} > 1.25 - איתות קונטרריאני שורי)"
+        elif active_pcr < 0.70:
+            sentiment_label = f"🐮 סנטימנט שורי / שאננות יתר ({pcr_type_label} {active_pcr:.2f} < 0.70 - סיכון לתיקון טכני)"
         else:
-            sentiment_label = "⚖️ שיווי משקל ניטרלי"
+            sentiment_label = f"⚖️ שיווי משקל ניטרלי ({pcr_type_label}: {active_pcr:.2f})"
 
         spot_price = last_close_val_init
         dist_pain = ((spot_price - latest_putcall.max_pain_strike) / spot_price * 100.0) if spot_price > 0 else 0.0
         dist_pain_str = f"{dist_pain:+.1f}% מהספוט" if spot_price > 0 else ""
 
         with pc_col1:
-            st.metric(
-                "יחס פוט/קול פוזיציות (PCR OI)",
-                f"{latest_putcall.pcr_oi:.2f}",
-                delta=f"פוט: {latest_putcall.total_put_oi:,.0f} | קול: {latest_putcall.total_call_oi:,.0f}",
-                delta_color="off",
-            )
+            if has_oi:
+                st.metric(
+                    "יחס פוט/קול פוזיציות (PCR OI)",
+                    f"{latest_putcall.pcr_oi:.2f}",
+                    delta=f"פוט: {latest_putcall.total_put_oi:,.0f} | קול: {latest_putcall.total_call_oi:,.0f}",
+                    delta_color="off",
+                )
+            else:
+                st.metric(
+                    "יחס פוט/קול פוזיציות (PCR OI)",
+                    "—",
+                    delta="קובץ מחזורי מסחר בלבד",
+                    delta_color="off",
+                )
         with pc_col2:
             st.metric(
                 "יחס פוט/קול מחזורים (PCR Vol)",
@@ -790,8 +807,9 @@ with tab_data:
                 delta_color="off",
             )
         with pc_col3:
+            pain_type = "Max Pain" if has_oi else "Max Pain (מחזורים)"
             st.metric(
-                "שער כאב מקסימלי (Max Pain)",
+                f"שער כאב ({pain_type})",
                 f"{latest_putcall.max_pain_strike:,.0f}",
                 delta=dist_pain_str,
                 delta_color="off",
@@ -804,7 +822,7 @@ with tab_data:
                 delta_color="off",
             )
 
-        st.caption(f"📌 {sentiment_label} | נתוני פוזיציות מעודכנים ל: {latest_putcall.as_of_date}")
+        st.caption(f"📌 {sentiment_label} | נתונים מעודכנים ל: {latest_putcall.as_of_date} ({latest_putcall.expiry_label})")
 
         strikes_df = pd.DataFrame([
             {
@@ -819,20 +837,41 @@ with tab_data:
         
         import plotly.graph_objects as go
         fig_pc = go.Figure()
-        fig_pc.add_trace(go.Bar(
-            x=strikes_df["שער מימוש (Strike)"],
-            y=strikes_df["פוזיציות פתוחות Call"],
-            name="קולים (Call OI)",
-            marker_color="#1976d2",
-            opacity=0.85,
-        ))
-        fig_pc.add_trace(go.Bar(
-            x=strikes_df["שער מימוש (Strike)"],
-            y=strikes_df["פוזיציות פתוחות Put"],
-            name="פוטים (Put OI)",
-            marker_color="#d32f2f",
-            opacity=0.85,
-        ))
+        if has_oi:
+            fig_pc.add_trace(go.Bar(
+                x=strikes_df["שער מימוש (Strike)"],
+                y=strikes_df["פוזיציות פתוחות Call"],
+                name="קולים (Call OI)",
+                marker_color="#1976d2",
+                opacity=0.85,
+            ))
+            fig_pc.add_trace(go.Bar(
+                x=strikes_df["שער מימוש (Strike)"],
+                y=strikes_df["פוזיציות פתוחות Put"],
+                name="פוטים (Put OI)",
+                marker_color="#d32f2f",
+                opacity=0.85,
+            ))
+            chart_title = "התפלגות פוזיציות פתוחות (Call OI מול Put OI) לפי שער מימוש"
+            y_axis_title = "כמות חוזים פתוחים (OI)"
+        else:
+            fig_pc.add_trace(go.Bar(
+                x=strikes_df["שער מימוש (Strike)"],
+                y=strikes_df["מחזור Call"],
+                name="מחזור קולים (Call Vol)",
+                marker_color="#1976d2",
+                opacity=0.85,
+            ))
+            fig_pc.add_trace(go.Bar(
+                x=strikes_df["שער מימוש (Strike)"],
+                y=strikes_df["מחזור Put"],
+                name="מחזור פוטים (Put Vol)",
+                marker_color="#d32f2f",
+                opacity=0.85,
+            ))
+            chart_title = "התפלגות מחזורי מסחר בנגזרים (Call Volume מול Put Volume) לפי שער מימוש"
+            y_axis_title = "מחזור ביחידות (חוזים שנסחרו)"
+
         fig_pc.add_vline(
             x=latest_putcall.max_pain_strike,
             line_width=2.5,
@@ -853,9 +892,9 @@ with tab_data:
 
         fig_pc.update_layout(
             barmode="group",
-            title="התפלגות פוזיציות פתוחות (Call OI מול Put OI) לפי שער מימוש",
+            title=chart_title,
             xaxis_title="שער מימוש (Strike)",
-            yaxis_title="כמות חוזים פתוחים",
+            yaxis_title=y_axis_title,
             template="plotly_white",
             height=380,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),

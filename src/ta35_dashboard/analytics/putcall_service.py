@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import re
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +115,8 @@ def _clean_numeric(val: Any) -> float:
 def parse_putcall_data(raw: bytes, filename: str = "") -> PutCallAnalysisResult:
     """Parse Put/Call Chart or Open Positions data from CSV / Excel / text bytes."""
     df: pd.DataFrame | None = None
+    meta_as_of = ""
+    meta_expiry = ""
 
     if filename.lower().endswith((".xlsx", ".xls")):
         try:
@@ -131,12 +135,37 @@ def parse_putcall_data(raw: bytes, filename: str = "") -> PutCallAnalysisResult:
                     if not lines:
                         continue
                     
-                    header_idx = 0
-                    for idx, line in enumerate(lines[:15]):
+                    for line in lines[:10]:
                         line_lower = line.lower()
-                        if any(k in line_lower for k in ("strike", "מימוש", "סטרייק", "קול", "פוט", "call", "put")):
-                            header_idx = idx
-                            break
+                        if ("פקיעה" in line or "expir" in line_lower) and not meta_expiry:
+                            m = re.search(r"(\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2})", line)
+                            if m:
+                                meta_expiry = m.group(1)
+                        if ("נכון" in line or "as of" in line_lower) and not meta_as_of:
+                            m = re.search(r"(\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2})", line)
+                            if m:
+                                meta_as_of = m.group(1)
+
+                    header_idx = None
+                    for idx, line in enumerate(lines[:15]):
+                        cells = [c.strip().strip('"\'') for c in line.split(sep) if c.strip()]
+                        if len(cells) >= 2:
+                            cells_lower = [c.lower() for c in cells]
+                            has_strike = any(any(k in c for k in ("strike", "מימוש", "סטרייק", "k")) for c in cells_lower)
+                            has_cp = any(any(k in c for k in ("call", "put", "קול", "פוט", "oi", "open", "מחזור", "vol", "פוזיצי")) for c in cells_lower)
+                            if has_strike and has_cp:
+                                header_idx = idx
+                                break
+
+                    if header_idx is None:
+                        for idx, line in enumerate(lines[:15]):
+                            line_lower = line.lower()
+                            if any(k in line_lower for k in ("strike", "מימוש", "סטרייק", "קול", "פוט", "call", "put")):
+                                header_idx = idx
+                                break
+
+                    if header_idx is None:
+                        header_idx = 0
 
                     parsed_csv = "\n".join(lines[header_idx:])
                     df_candidate = pd.read_csv(io.StringIO(parsed_csv), sep=sep, on_bad_lines="skip")
@@ -154,19 +183,29 @@ def parse_putcall_data(raw: bytes, filename: str = "") -> PutCallAnalysisResult:
     col_map: dict[str, str] = {}
     for col in df.columns:
         c_norm = str(col).strip().lower().replace('"', "").replace("'", "").replace("_", " ")
-        if any(k in c_norm for k in ("שער מימוש", "מחיר מימוש", "סטרייק", "strike", "exercise price", "k")):
+        is_call = any(k in c_norm for k in ("call", "קול", "(c)", " c"))
+        is_put = any(k in c_norm for k in ("put", "פוט", "(p)", " p"))
+        is_strike = any(k in c_norm for k in ("שער מימוש", "מחיר מימוש", "סטרייק", "strike", "exercise price"))
+        is_oi = any(k in c_norm for k in ("פוזיציות פתוחות", "פתיחות", "open interest", "oi"))
+        is_vol = any(k in c_norm for k in ("מחזור ביחידות", "מחזור", "מחזורים", "כמות", "volume", "turnover", "vol"))
+
+        if is_strike and is_call:
+            col_map[col] = "strike_call"
+        elif is_strike and is_put:
+            col_map[col] = "strike_put"
+        elif is_strike:
             col_map[col] = "strike"
-        elif any(k in c_norm for k in ("פוזיציות פתוחות קול", "פתיחות קול", "call oi", "calls oi", "call open interest", "פתוחות c")):
+        elif is_oi and is_call:
             col_map[col] = "call_oi"
-        elif any(k in c_norm for k in ("פוזיציות פתוחות פוט", "פתיחות פוט", "put oi", "puts oi", "put open interest", "פתוחות p")):
+        elif is_oi and is_put:
             col_map[col] = "put_oi"
-        elif any(k in c_norm for k in ("מחזור קול", "מחזורים קול", "כמות קול", "call vol", "call turnover", "מחזור c")):
+        elif is_vol and is_call:
             col_map[col] = "call_vol"
-        elif any(k in c_norm for k in ("מחזור פוט", "מחזורים פוט", "כמות פוט", "put vol", "put turnover", "מחזור p")):
+        elif is_vol and is_put:
             col_map[col] = "put_vol"
-        elif any(k in c_norm for k in ("פוזיציות פתוחות", "פתיחות", "open interest", "oi")):
+        elif is_oi:
             col_map[col] = "open_interest"
-        elif any(k in c_norm for k in ("מחזור", "volume", "turnover", "vol")):
+        elif is_vol:
             col_map[col] = "volume"
         elif any(k in c_norm for k in ("סוג", "type", "call/put", "right")):
             col_map[col] = "right"
@@ -179,15 +218,27 @@ def parse_putcall_data(raw: bytes, filename: str = "") -> PutCallAnalysisResult:
 
     strike_rows: list[PutCallStrikeRow] = []
 
-    if "strike" in df.columns and ("call_oi" in df.columns or "put_oi" in df.columns):
+    has_strike_col = ("strike" in df.columns or "strike_call" in df.columns or "strike_put" in df.columns)
+    has_metrics = any(c in df.columns for c in ("call_oi", "put_oi", "call_vol", "put_vol"))
+
+    if has_strike_col and has_metrics:
         for _, row in df.iterrows():
-            k = _clean_numeric(row.get("strike"))
+            k = 0.0
+            if "strike" in df.columns:
+                k = _clean_numeric(row.get("strike"))
+            elif "strike_call" in df.columns:
+                k = _clean_numeric(row.get("strike_call"))
+            elif "strike_put" in df.columns:
+                k = _clean_numeric(row.get("strike_put"))
+            
             if k <= 0:
                 continue
+
             c_oi = _clean_numeric(row.get("call_oi", 0.0))
             p_oi = _clean_numeric(row.get("put_oi", 0.0))
             c_vol = _clean_numeric(row.get("call_vol", 0.0))
             p_vol = _clean_numeric(row.get("put_vol", 0.0))
+
             strike_rows.append(PutCallStrikeRow(
                 strike=k,
                 call_oi=c_oi,
@@ -196,10 +247,11 @@ def parse_putcall_data(raw: bytes, filename: str = "") -> PutCallAnalysisResult:
                 put_vol=p_vol,
             ))
 
-    elif "strike" in df.columns and "right" in df.columns and "open_interest" in df.columns:
+    elif ("strike" in df.columns or "strike_call" in df.columns) and "right" in df.columns and ("open_interest" in df.columns or "volume" in df.columns):
         grouped: dict[float, dict[str, float]] = {}
+        strike_key = "strike" if "strike" in df.columns else "strike_call"
         for _, row in df.iterrows():
-            k = _clean_numeric(row.get("strike"))
+            k = _clean_numeric(row.get(strike_key))
             if k <= 0:
                 continue
             r = str(row.get("right", "")).upper().strip()
@@ -225,7 +277,7 @@ def parse_putcall_data(raw: bytes, filename: str = "") -> PutCallAnalysisResult:
             ))
 
     if not strike_rows:
-        raise ValueError("לא זוהו שורות נתונים תקינות בקובץ ה-Put/Call. ודא שהקובץ כולל שערי מימוש ופוזיציות פתוחות.")
+        raise ValueError("לא זוהו שורות נתונים תקינות בקובץ ה-Put/Call. ודא שהקובץ כולל שערי מימוש ונתוני פוזיציות או מחזורים.")
 
     strike_rows.sort(key=lambda x: x.strike)
 
@@ -243,19 +295,34 @@ def parse_putcall_data(raw: bytes, filename: str = "") -> PutCallAnalysisResult:
     pcr_oi = (tot_put_oi / tot_call_oi) if tot_call_oi > 0 else 1.0
     pcr_vol = (tot_put_vol / tot_call_vol) if tot_call_vol > 0 else 1.0
 
-    max_pain = calculate_max_pain(strikes_list, call_ois, put_ois)
+    if tot_call_oi > 0 or tot_put_oi > 0:
+        max_pain = calculate_max_pain(strikes_list, call_ois, put_ois)
+        max_c_idx = max(range(len(call_ois)), key=lambda i: call_ois[i]) if call_ois else 0
+        max_p_idx = max(range(len(put_ois)), key=lambda i: put_ois[i]) if put_ois else 0
+        net_skew = ((tot_call_oi - tot_put_oi) / (tot_call_oi + tot_put_oi)) if (tot_call_oi + tot_put_oi) > 0 else 0.0
+    else:
+        max_pain = calculate_max_pain(strikes_list, call_vols, put_vols)
+        max_c_idx = max(range(len(call_vols)), key=lambda i: call_vols[i]) if call_vols else 0
+        max_p_idx = max(range(len(put_vols)), key=lambda i: put_vols[i]) if put_vols else 0
+        net_skew = ((tot_call_vol - tot_put_vol) / (tot_call_vol + tot_put_vol)) if (tot_call_vol + tot_put_vol) > 0 else 0.0
 
-    max_c_idx = max(range(len(call_ois)), key=lambda i: call_ois[i]) if call_ois else 0
-    max_p_idx = max(range(len(put_ois)), key=lambda i: put_ois[i]) if put_ois else 0
     call_wall = strikes_list[max_c_idx] if strikes_list else 0.0
     put_wall = strikes_list[max_p_idx] if strikes_list else 0.0
 
-    net_skew = ((tot_call_oi - tot_put_oi) / (tot_call_oi + tot_put_oi)) if (tot_call_oi + tot_put_oi) > 0 else 0.0
-
     as_of = datetime.now(UTC).strftime("%Y-%m-%d")
+    if meta_as_of:
+        if "/" in meta_as_of:
+            parts = meta_as_of.split("/")
+            if len(parts) == 3:
+                as_of = f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
+        elif "-" in meta_as_of and len(meta_as_of) >= 8:
+            as_of = meta_as_of
+
+    expiry_label = f"פקיעה {meta_expiry}" if meta_expiry else "סדרה נוכחית"
+
     return PutCallAnalysisResult(
         as_of_date=as_of,
-        expiry_label="סדרה נוכחית",
+        expiry_label=expiry_label,
         strikes=strike_rows,
         total_call_oi=tot_call_oi,
         total_put_oi=tot_put_oi,
