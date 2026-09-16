@@ -101,6 +101,29 @@ tab_trade, tab_history, tab_track, tab_market, tab_research, tab_data = st.tabs(
 with tab_trade:
     render_decision_hero(decision_result, spot_price=last_close_val_init)
 
+    st.markdown("---")
+    st.subheader("🤖 מודל למידת מכונה (6-Stage ML Pipeline)")
+    try:
+        conn = sqlite3.connect(SETTINGS.database_path)
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ml_forecast_results'")
+        if cur.fetchone() is None:
+            st.info("לא נמצאו תוצאות מודל ML במסד הנתונים (הטבלה חסרה).")
+        else:
+            ml_df = pd.read_sql("SELECT * FROM ml_forecast_results ORDER BY timestamp DESC LIMIT 1", conn)
+            if not ml_df.empty:
+                ml_data = ml_df.iloc[0]
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("תחזית תנודתיות משולבת", f"{(ml_data['har_pred']+ml_data['gjr_pred'])/2 * 100:.2f}%")
+                m2.metric("הסתברות מגמה (מכוילת)", f"{ml_data['calibrated_prob'] * 100:.1f}%")
+                m3.metric("חותמת אישור (Meta-Label)", f"{ml_data['meta_prediction'] * 100:.1f}%")
+                m4.metric("א-סימטריה באופציות (Skew)", f"{ml_data['vol_skew']:.2f}")
+            else:
+                st.info("לא נמצאו תוצאות מודל ML במסד הנתונים.")
+        conn.close()
+    except Exception as e:
+        st.warning(f"שגיאה בטעינת נתוני ML: {e}")
+
 # -----------------------------------------------------------------------------
 # TAB 2: TRACK RECORD — ביצועי עבר ואימות המלצות
 # -----------------------------------------------------------------------------
@@ -587,10 +610,12 @@ with tab_data:
     with col_l3:
         st.markdown("**⚡ נגזרים ופוזיציות פתוחות**")
         st.link_button(
-            "📊 תרשים פוט/קול ומחזורים (Put/Call Chart)",
+            "📊 דף תרשים פוט/קול ומחזורים (Put/Call Chart)",
             "https://market.tase.co.il/he/market_data/derivatives/01/putcallchart",
             use_container_width=True,
+            type="primary",
         )
+
         st.link_button(
             "דף שוק הנגזרים הראשי",
             "https://www.tase.co.il/he/market_data/derivatives",
@@ -645,8 +670,10 @@ with tab_data:
             "קובץ פוזיציות פתוחות / Put-Call Chart",
             type=("csv", "xlsx", "xls", "txt"),
             key="putcall_csv",
-            help="העלאת קובץ פוזיציות פתוחות ותרשים פוט/קול (מדד ת״א-35)",
+            help="העלאת קובץ פוזיציות פתוחות ותרשים פוט/קול (מדד ת״א-35) מתוך https://market.tase.co.il/he/market_data/derivatives/01/putcallchart",
         )
+        u_col6.markdown("[🔗 מעבר ישיר לדף תרשים Put/Call ומחזורים בבורסה](https://market.tase.co.il/he/market_data/derivatives/01/putcallchart)")
+
 
         submitted = st.form_submit_button(
             "🚀 בדיקה, זיהוי אוטומטי ועדכון כל המקורות", type="primary", use_container_width=True
@@ -760,10 +787,18 @@ with tab_data:
     # -------------------------------------------------------------------------
     # Put/Call Chart & Open Positions Live Analysis
     # -------------------------------------------------------------------------
-    st.markdown("---")
-    st.subheader("🎯 ניתוח תרשים יחס פוט/קול ופוזיציות פתוחות (TASE Put/Call Chart - 01)")
+    col_pc_hdr, col_pc_link = st.columns([2.8, 1.2])
+    with col_pc_hdr:
+        st.subheader("🎯 ניתוח תרשים יחס פוט/קול ופוזיציות פתוחות (TASE Put/Call Chart - 01)")
+    with col_pc_link:
+        st.link_button(
+            "🔗 דף התרשים בבורסה",
+            "https://market.tase.co.il/he/market_data/derivatives/01/putcallchart",
+            use_container_width=True,
+        )
     
     from ta35_dashboard.analytics.putcall_service import load_latest_putcall_snapshot
+
     latest_putcall = load_latest_putcall_snapshot(SETTINGS.database_path)
 
     if latest_putcall:
@@ -1040,7 +1075,8 @@ with tab_data:
         else:
             st.caption("💡 לאחר העלאת קובץ נוסף ביום הבא, יוצג כאן אוטומטית ניתוח שינויי פוזיציות יומיים (ΔOI) ותרשים שינויים לפי סטרייק.")
     else:
-        st.info("ℹ️ טרם הועלו נתוני פוזיציות פתוחות ותרשים Put/Call. ניתן להוריד את הנתונים ישירות מאתר הבורסה בקישור למעלה ולהעלותם בטופס העדכון.")
+        st.info("ℹ️ טרם הועלו נתוני פוזיציות פתוחות ותרשים Put/Call. ניתן להוריד את הנתונים ישירות מ[דף תרשים פוט/קול ומחזורים באתר הבורסה](https://market.tase.co.il/he/market_data/derivatives/01/putcallchart) ולהעלותם בטופס העדכון.")
+
 
     st.markdown("---")
     st.subheader("📊 חיווי סטטוס סדרות נתונים במערכת")

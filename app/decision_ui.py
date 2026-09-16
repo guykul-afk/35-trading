@@ -266,14 +266,23 @@ def get_strategy_rationale_and_considerations(
 def render_decision_hero(
     result: StrategyRecommendation,
     spot_price: float = 4150.0,
+    timesfm_direction_info: dict | None = None,
+    **kwargs: Any,
 ) -> None:
     """Renders the top Decision Hero view (100% EOD Quantitative Architecture)."""
-    render_eod_strategy_hero(result, spot_price=spot_price)
+    render_eod_strategy_hero(
+        result,
+        spot_price=spot_price,
+        timesfm_direction_info=timesfm_direction_info,
+        **kwargs,
+    )
 
 
 def render_eod_strategy_hero(
     rec: StrategyRecommendation,
     spot_price: float = 4150.0,
+    timesfm_direction_info: dict | None = None,
+    **kwargs: Any,
 ) -> None:
     """Renders 3 prioritized StrategyRecommendation cards with explicit instructions, statistical legs, and visual charts."""
     st.caption(":green[📊 מודל קוואנטי סוף יום (EOD) — מבוסס נתונים רשמיים בלבד (בורסת ת״א / בנק ישראל / CBOE)]")
@@ -285,6 +294,12 @@ def render_eod_strategy_hero(
         with col_view:
             st.markdown(f"### כיוון שוק: {rec.direction_view}")
             st.write(f"**הסתברות לעלייה P(up):** `{rec.direction_probability:.1%}`")
+            if timesfm_direction_info and timesfm_direction_info.get("return") is not None:
+                tf_r = timesfm_direction_info["return"]
+                tf_tp = timesfm_direction_info.get("target_price")
+                tp_str = f" (יעד: {tf_tp:,.0f})" if tf_tp else ""
+                tf_icon = "📈" if tf_r > 0 else ("📉" if tf_r < 0 else "➖")
+                st.caption(f"🤖 **TimesFM AI:** {tf_icon} `{tf_r:+.2%}`{tp_str} (משוקלל דינמית)")
             st.write(f"**צפי תנודתיות:** `{rec.volatility_view}` ({rec.forecast_rv:.1%})")
             st.write(f"**משטר תנודתיות:** `{rec.regime}`")
             

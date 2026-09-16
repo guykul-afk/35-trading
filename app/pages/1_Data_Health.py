@@ -36,3 +36,10 @@ st.dataframe(frame, width="stretch", hide_index=True)
 st.info(
     "סדרות TASE נקלטות מייצוא CSV רשמי. Cboe ניתנת לרענון אוטומטי. נתון חסר נשאר חסר ואינו מוחלף בערך ישן ללא סימון."
 )
+st.link_button(
+    "📊 דף תרשים פוט/קול ומחזורים בבורסה (Put/Call Chart)",
+    "https://market.tase.co.il/he/market_data/derivatives/01/putcallchart",
+    type="primary",
+    use_container_width=True,
+)
+
