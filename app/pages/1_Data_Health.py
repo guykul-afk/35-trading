@@ -20,19 +20,41 @@ from ui import bundle, page_header
 
 data = bundle()
 page_header("בריאות נתונים — Lite", data)
-frame = pd.DataFrame(
-    [
-        {
-            "סדרה": item.symbol,
-            "תאריך אחרון": item.last_date,
-            "מספר תצפיות": item.observations,
-            "מקור": item.source or "—",
-            "מצב": item.status,
-        }
-        for item in data.health
-    ]
-)
+from ta35_dashboard.analytics.putcall_service import load_latest_putcall_snapshot
+from ta35_dashboard.config import SETTINGS
+
+health_rows = [
+    {
+        "סדרה": item.symbol,
+        "תאריך אחרון": item.last_date,
+        "מספר תצפיות": item.observations,
+        "מקור": item.source or "—",
+        "מצב": item.status,
+    }
+    for item in data.health
+]
+
+pc_snap = load_latest_putcall_snapshot(SETTINGS.database_path)
+if pc_snap:
+    health_rows.append({
+        "סדרה": "PUTCALL_CHART (פוזיציות פתוחות ומחזורים)",
+        "תאריך אחרון": pc_snap.as_of_date,
+        "מספר תצפיות": len(pc_snap.strikes),
+        "מקור": "TASE (נגזרים)",
+        "מצב": "תקין",
+    })
+else:
+    health_rows.append({
+        "סדרה": "PUTCALL_CHART (פוזיציות פתוחות ומחזורים)",
+        "תאריך אחרון": None,
+        "מספר תצפיות": 0,
+        "מקור": "TASE (נגזרים)",
+        "מצב": "חסר",
+    })
+
+frame = pd.DataFrame(health_rows)
 st.dataframe(frame, width="stretch", hide_index=True)
+
 st.info(
     "סדרות TASE נקלטות מייצוא CSV רשמי. Cboe ניתנת לרענון אוטומטי. נתון חסר נשאר חסר ואינו מוחלף בערך ישן ללא סימון."
 )
