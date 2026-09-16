@@ -1087,6 +1087,7 @@ with tab_data:
         ("TA_BANKS5", "מדד ת״א בנקים-5", "🏦 מגזרי", "קובץ TASE", False),
         ("TEL_GOV_ALL", "מדד תל גוב-כללי", "🏛️ אג״ח ממשלתי", "קובץ TASE", False),
         ("TEL_BOND60", "מדד תל-בונד 60", "📊 אשראי קונצרני", "קובץ TASE", False),
+        ("PUTCALL_CHART", "פוזיציות פתוחות ומחזורים", "⚡ נגזרים ואופציות", "קובץ TASE", False),
         ("USDILS", "שער דולר/שקל", "💵 מט״ח", "בנק ישראל (אוטומטי)", False),
         ("VIX", "Cboe VIX", "🇺🇸 מאקרו ארה״ב", "Cboe (אוטומטי)", False),
         ("VIX9D", "Cboe VIX 9-Day", "🇺🇸 מאקרו ארה״ב", "Cboe (אוטומטי)", False),
@@ -1095,13 +1096,34 @@ with tab_data:
     
     health_map = {}
     for sym, _, _, _, _ in EXPECTED_SERIES:
-        history = repo.bar_history(sym)
-        last = history[-1] if history else None
-        health_map[sym] = {
-            "observations": len(history),
-            "last_date": last.session_date if last else None,
-            "source": last.source if last else None,
-        }
+        if sym == "PUTCALL_CHART":
+            from ta35_dashboard.analytics.putcall_service import load_historical_putcall_snapshots
+            pc_snaps = load_historical_putcall_snapshots(SETTINGS.database_path, limit=100)
+            pc_last = pc_snaps[0] if pc_snaps else None
+            pc_date = None
+            if pc_last and pc_last.as_of_date:
+                try:
+                    pc_date = datetime.strptime(str(pc_last.as_of_date).strip(), "%Y-%m-%d").date()
+                except Exception:
+                    try:
+                        pc_date = datetime.strptime(str(pc_last.as_of_date).strip(), "%d/%m/%Y").date()
+                    except Exception:
+                        pc_date = None
+            health_map[sym] = {
+                "observations": len(pc_snaps),
+                "last_date": pc_date,
+                "source": "קובץ TASE (נגזרים)",
+                "strikes_count": len(pc_last.strikes) if pc_last else 0,
+                "expiry_label": pc_last.expiry_label if pc_last else "",
+            }
+        else:
+            history = repo.bar_history(sym)
+            last = history[-1] if history else None
+            health_map[sym] = {
+                "observations": len(history),
+                "last_date": last.session_date if last else None,
+                "source": last.source if last else None,
+            }
     
     status_cols = st.columns(3)
     for idx, (sym, name, cat, src_type, is_mandatory) in enumerate(EXPECTED_SERIES):
@@ -1110,7 +1132,14 @@ with tab_data:
         last_date = h["last_date"] if h else None
         is_loaded = obs_count > 0
         last_date_str = f"{last_date:%d/%m/%Y}" if last_date else "טרם נטען"
-        obs_count_str = f"{obs_count:,} ימים" if is_loaded else "0 ימים"
+        if sym == "PUTCALL_CHART":
+            strikes_num = h.get("strikes_count", 0)
+            obs_count_str = f"{strikes_num:,} סטרייקים" if is_loaded else "0 סטרייקים"
+            expiry_val = h.get("expiry_label", "")
+            expiry_str = f" · {expiry_val}" if expiry_val else ""
+        else:
+            obs_count_str = f"{obs_count:,} ימים" if is_loaded else "0 ימים"
+            expiry_str = ""
         
         with status_cols[idx % 3]:
             if is_loaded:
@@ -1125,10 +1154,10 @@ with tab_data:
             st.markdown(
                 f"""
                 <div style="background-color: {box_bg}; border: 1.5px solid {border_color}; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                    <div style="font-weight: bold; font-size: 1.05em; color: #1a237e;">{name} ({sym})</div>
-                    <div style="font-size: 0.85em; color: #555;">{cat} · {src_type}</div>
+                    <div style="font-weight: bold; font-size: 1.05em; color: #1a237e;">({sym}) {name}</div>
+                    <div style="font-size: 0.85em; color: #555;">{src_type} · {cat}</div>
                     <div style="margin-top: 6px; font-size: 0.95em;">סטטוס: <b>{badge}</b></div>
-                    <div style="font-size: 0.85em; color: #333; margin-top: 2px;">תאריך אחרון: <b>{last_date_str}</b> ({obs_count_str})</div>
+                    <div style="font-size: 0.85em; color: #333; margin-top: 2px;">תאריך אחרון: <b>{last_date_str}</b> ({obs_count_str}{expiry_str})</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1138,14 +1167,16 @@ with tab_data:
         health_rows = [
             {
                 "סדרה": sym,
+                "שם המדד / מקור": name,
                 "תאריך אחרון": f"{health_map[sym]['last_date']:%d/%m/%Y}" if health_map[sym]["last_date"] else "חסר",
-                "מספר תצפיות": health_map[sym]["observations"],
+                "מספר תצפיות": f"{health_map[sym].get('strikes_count', 0):,} סטרייקים ({health_map[sym]['observations']} סנפשוטים)" if sym == "PUTCALL_CHART" and health_map[sym]["observations"] > 0 else (f"{health_map[sym]['observations']:,} ימים" if health_map[sym]["observations"] > 0 else "0"),
                 "מקור": health_map[sym]["source"] or "—",
                 "סטטוס": "תקין" if health_map[sym]["observations"] > 0 else "חסר",
             }
-            for sym, _, _, _, _ in EXPECTED_SERIES
+            for sym, name, _, _, _ in EXPECTED_SERIES
         ]
         st.dataframe(pd.DataFrame(health_rows), hide_index=True, use_container_width=True)
+
 
 st.caption(
     "כל המדדים הם כלי תמיכה בלבד. אין במערכת הוראות מסחר, חיבור לחשבון או נתוני זמן אמת."
