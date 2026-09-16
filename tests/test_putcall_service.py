@@ -2,6 +2,8 @@ from pathlib import Path
 import pytest
 from ta35_dashboard.analytics.putcall_service import (
     calculate_max_pain,
+    calculate_max_pain_curve,
+    build_putcall_research_product,
     parse_putcall_data,
     save_putcall_snapshot,
     load_latest_putcall_snapshot,
@@ -107,5 +109,44 @@ def test_parse_tase_putvscall_chart_export():
     assert abs(res.pcr_vol - (220.0 / 320.0)) < 0.001
     assert res.call_wall_strike == 4160.0
     assert res.put_wall_strike == 4100.0
+
+
+def test_calculate_max_pain_curve():
+    strikes = [2000.0, 2020.0, 2040.0]
+    call_ois = [100.0, 300.0, 500.0]
+    put_ois = [500.0, 400.0, 100.0]
+    curve = calculate_max_pain_curve(strikes, call_ois, put_ois)
+    assert len(curve) == 3
+    # At strike 2020, total loss should be the minimum among the 3 strikes
+    pain_loss = [loss for s, loss in curve if s == 2020.0][0]
+    for s, loss in curve:
+        assert pain_loss <= loss
+
+
+def test_build_putcall_research_product():
+    raw1 = """
+    Strike,Call OI,Put OI,Call Vol,Put Vol
+    2000,100,500,10,50
+    2020,300,400,25,30
+    2040,500,200,40,15
+    """.strip().encode("utf-8")
+    raw2 = """
+    Strike,Call OI,Put OI,Call Vol,Put Vol
+    2000,120,800,10,50
+    2020,310,600,25,30
+    2040,550,150,40,15
+    """.strip().encode("utf-8")
+    s1 = parse_putcall_data(raw1)
+    s2 = parse_putcall_data(raw2)
+
+    product = build_putcall_research_product(s2, s1, spot_price=2025.0)
+    assert product is not None
+    assert product.has_data is True
+    assert product.spot_price == 2025.0
+    assert len(product.payout_curve) == 3
+    assert product.has_delta is True
+    assert product.oi_change is not None
+    assert len(product.empirical_table) == 4
+    assert len(product.strategic_takeaways) >= 2
 
 

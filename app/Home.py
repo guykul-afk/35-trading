@@ -557,6 +557,218 @@ with tab_research:
 
     st.dataframe(pd.DataFrame(matrix_rows), hide_index=True, use_container_width=True)
 
+    # -------------------------------------------------------------------------
+    # 4. מחקר נגזרים: פוזיציות פתוחות, שינויי פוזיציות (ΔOI) ומבנה שוק
+    # -------------------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🔬 תוצרי מחקר נגזרים: פוזיציות פתוחות, שינויי פוזיציות (ΔOI) ומבנה פקיעה")
+    st.caption("ניתוח כמותי מוסדי המשלב את יחסי ה-Put/Call, אפקט המשיכה לשער ה-Max Pain, קירות המסחר הסטטיסטיים, וזרימת שינויי הפוזיציות היומיים (ΔOI Flow).")
+
+    from ta35_dashboard.analytics.putcall_service import (
+        load_historical_putcall_snapshots,
+        build_putcall_research_product,
+    )
+    pc_snaps = load_historical_putcall_snapshots(SETTINGS.database_path, limit=2)
+    pc_latest = pc_snaps[0] if pc_snaps else None
+    pc_prev = pc_snaps[1] if len(pc_snaps) > 1 else None
+    pc_research = build_putcall_research_product(pc_latest, pc_prev, spot_price=last_close_val_init)
+
+    if not pc_research:
+        st.info("🔬 טרם הועלו נתוני נגזרים ופוזיציות פתוחות. לאחר העלאת קובץ הנגזרים (בלשונית ⚙️ נתונים), יוצגו כאן באופן אוטומטי תוצרי מחקר כמותיים: עקומת ה-Max Pain, אפקט ה-Pinning, מסדרון הקירות, וזרימת שינויי הפוזיציות היומיים (ΔOI).")
+        st.link_button(
+            "📊 דף תרשים פוט/קול ומחזורים בבורסה (Put/Call Chart)",
+            "https://market.tase.co.il/he/market_data/derivatives/01/putcallchart",
+            type="primary",
+        )
+    else:
+        # 1. 4 Metric Cards
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        with rc1:
+            st.metric(
+                "סנטימנט נגזרים (PCR)",
+                f"{pc_research.active_pcr:.2f}",
+                delta=pc_research.pcr_sentiment_label,
+                delta_color="off",
+                help="יחס פוט/קול נוכחי. רמות קיצון מעל 1.25 או מתחת ל-0.70 משמשות כאיתות סנטימנט קונטרריאני.",
+            )
+        with rc2:
+            st.metric(
+                "שער כאב מקסימלי (Max Pain)",
+                f"{pc_research.max_pain:,.0f}",
+                delta=f"{pc_research.dist_pain_pct:+.1f}% מהספוט",
+                delta_color="off",
+                help="השער שבו תשלום הפדיונות לרוכשי האופציות מינימלי, ומהווה מגנט שבועי/חודשי לקראת הפקיעה.",
+            )
+        with rc3:
+            st.metric(
+                "מסדרון קירות אופציות",
+                f"{pc_research.corridor_width_pts:,.0f} נק'",
+                delta=f"🛡️ {pc_research.put_wall:,.0f} ➔ 🧱 {pc_research.call_wall:,.0f}",
+                delta_color="off",
+                help="רוחב המסדרון בין רצפת התמיכה (Put Wall) לתקרת ההתנגדות (Call Wall).",
+            )
+        with rc4:
+            if pc_research.has_delta and pc_research.oi_change:
+                delta_net_str = f"נטו: {pc_research.oi_change.delta_net_oi:+,.0f} חוזים"
+                st.metric(
+                    "זרימת חוזים יומית (ΔOI)",
+                    f"{pc_research.oi_change.delta_total_call_oi:+,.0f} C / {pc_research.oi_change.delta_total_put_oi:+,.0f} P",
+                    delta=delta_net_str,
+                    delta_color="off",
+                    help="שינוי נטו בכמות הפוזיציות הפתוחות מהיום הקודם.",
+                )
+            else:
+                st.metric(
+                    "זרימת חוזים יומית (ΔOI)",
+                    "סנפשוט ראשון",
+                    delta="דרוש יום נוסף",
+                    delta_color="off",
+                    help="השוואת שינוי פוזיציות יומי (ΔOI) תופעל אוטומטית ברגע שמועלה קובץ סוף יום נוסף.",
+                )
+
+        st.caption(f"📌 **סטטוס מחקר מעודכן ל:** {pc_research.as_of_date} ({pc_research.expiry_label}) | {pc_research.corridor_status_label} | {pc_research.pinning_strength_label}")
+
+        # 2. Tabs for Research Areas
+        tab_pain, tab_delta, tab_playbook = st.tabs([
+            "🧲 עקומת Max Pain ואפקט ה-Pinning",
+            "🌊 זרימת שינויי פוזיציות (ΔOI Flow)",
+            "📖 ספר מהלכים כמותי וממצאי מחקר אמפיריים",
+        ])
+
+        # TAB A: Max Pain Curve & Pinning
+        with tab_pain:
+            st.markdown("##### 🎯 עקומת פדיונות כוללת לפי שער מימוש (Option Buyers' Total Payout Curve)")
+            st.write(pc_research.pinning_explanation)
+
+            curve_strikes = [pt[0] for pt in pc_research.payout_curve]
+            curve_payouts = [pt[1] for pt in pc_research.payout_curve]
+
+            fig_curve = go.Figure()
+            fig_curve.add_trace(go.Scatter(
+                x=curve_strikes,
+                y=curve_payouts,
+                mode="lines+markers",
+                name="סך פדיון הרוכשים (הפסד הכותבים)",
+                line=dict(color="#d32f2f", width=3),
+                marker=dict(size=6, color="#b71c1c"),
+                fill="tozeroy",
+                fillcolor="rgba(211, 47, 47, 0.08)",
+            ))
+            fig_curve.add_vline(
+                x=pc_research.max_pain,
+                line_width=2.5,
+                line_dash="dash",
+                line_color="#f57f17",
+                annotation_text=f"Max Pain ({pc_research.max_pain:,.0f})",
+                annotation_position="top right",
+            )
+            if pc_research.spot_price > 0:
+                fig_curve.add_vline(
+                    x=pc_research.spot_price,
+                    line_width=2.5,
+                    line_dash="solid",
+                    line_color="#2e7d32",
+                    annotation_text=f"Spot ת״א-35 ({pc_research.spot_price:,.0f})",
+                    annotation_position="top left",
+                )
+            fig_curve.update_layout(
+                height=380,
+                xaxis_title="שער מימוש (Strike)",
+                yaxis_title="סך פדיון כספי של רוכשי האופציות (נק' מדד)",
+                template="plotly_white",
+                margin=dict(l=20, r=20, t=40, b=20),
+            )
+            st.plotly_chart(fig_curve, use_container_width=True)
+
+            pain_c1, pain_c2 = st.columns(2)
+            with pain_c1:
+                st.info(f"**מסקנת מחקר המשיכה (Gravity):** {pc_research.pinning_strength_label}\n\n"
+                        f"מדד הספוט נסחר ב-{pc_research.spot_price:,.0f}, המהווה סטייה של {pc_research.dist_pain_pct:+.1f}% "
+                        f"משער ה-Max Pain ({pc_research.max_pain:,.0f}).")
+            with pain_c2:
+                st.info(f"**מסדרון פקיעה סטטיסטי:** {pc_research.corridor_status_label}\n\n"
+                        f"רצפת תמיכה (Put Wall) ממוקמת ב-{pc_research.put_wall:,.0f}, ותקרת התנגדות (Call Wall) ב-{pc_research.call_wall:,.0f} "
+                        f"(רוחב כולל: {pc_research.corridor_width_pts:,.0f} נקודות מדד / {pc_research.corridor_width_pct:.1f}%).")
+
+        # TAB B: Delta OI Flow
+        with tab_delta:
+            if pc_research.has_delta and pc_research.oi_change:
+                oi_c = pc_research.oi_change
+                st.markdown(f"##### ⚡ משטר זרימת חוזים מוסדי: {oi_c.primary_regime_sentiment}")
+                for ins in oi_c.detailed_insights:
+                    st.write(f"• {ins}")
+
+                d_strikes = [s.strike for s in oi_c.strike_deltas if abs(s.delta_call_oi) > 0 or abs(s.delta_put_oi) > 0]
+                d_calls = [s.delta_call_oi for s in oi_c.strike_deltas if abs(s.delta_call_oi) > 0 or abs(s.delta_put_oi) > 0]
+                d_puts = [s.delta_put_oi for s in oi_c.strike_deltas if abs(s.delta_call_oi) > 0 or abs(s.delta_put_oi) > 0]
+
+                if d_strikes:
+                    fig_delta = go.Figure()
+                    fig_delta.add_trace(go.Bar(
+                        x=d_strikes,
+                        y=d_calls,
+                        name="שינוי בקולים (ΔCall OI)",
+                        marker_color="#1976d2",
+                        opacity=0.85,
+                    ))
+                    fig_delta.add_trace(go.Bar(
+                        x=d_strikes,
+                        y=d_puts,
+                        name="שינוי בפוטים (ΔPut OI)",
+                        marker_color="#d32f2f",
+                        opacity=0.85,
+                    ))
+                    if pc_research.spot_price > 0:
+                        fig_delta.add_vline(
+                            x=pc_research.spot_price,
+                            line_width=2,
+                            line_dash="solid",
+                            line_color="#2e7d32",
+                            annotation_text=f"Spot ({pc_research.spot_price:,.0f})",
+                            annotation_position="top right",
+                        )
+                    fig_delta.update_layout(
+                        barmode="group",
+                        title=f"התפלגות שינויי פוזיציות (ΔOI) בין {oi_c.prev_date} ל-{oi_c.current_date}",
+                        xaxis_title="שער מימוש (Strike)",
+                        yaxis_title="שינוי נטו בכמות חוזים (חוזים חדשים / סגירות)",
+                        template="plotly_white",
+                        height=360,
+                        margin=dict(l=20, r=20, t=50, b=20),
+                    )
+                    st.plotly_chart(fig_delta, use_container_width=True)
+
+                col_top_c, col_top_p = st.columns(2)
+                with col_top_c:
+                    st.markdown("**📈 מוקדי הצטברות קולים עיקריים (+ΔCall)**")
+                    if oi_c.top_call_accumulations:
+                        st.dataframe(pd.DataFrame([
+                            {"סטרייק": s.strike, "תוספת חוזים": f"+{s.delta_call_oi:,.0f}", "סך פוזיציות נוכחי": f"{s.current_call_oi:,.0f}"}
+                            for s in oi_c.top_call_accumulations
+                        ]), hide_index=True, use_container_width=True)
+                    else:
+                        st.caption("לא נרשמה תוספת קולים משמעותית.")
+                with col_top_p:
+                    st.markdown("**📉 מוקדי הצטברות פוטים / גידור עיקריים (+ΔPut)**")
+                    if oi_c.top_put_accumulations:
+                        st.dataframe(pd.DataFrame([
+                            {"סטרייק": s.strike, "תוספת חוזים": f"+{s.delta_put_oi:,.0f}", "סך פוזיציות נוכחי": f"{s.current_put_oi:,.0f}"}
+                            for s in oi_c.top_put_accumulations
+                        ]), hide_index=True, use_container_width=True)
+                    else:
+                        st.caption("לא נרשמה תוספת פוטים משמעותית.")
+            else:
+                st.info("💡 כרגע שמור במערכת סנפשוט אחד בלבד. לאחר העלאת קובץ נגזרים ביום המסחר הבא, יוצג כאן אוטומטית ניתוח שינויי פוזיציות יומיים (ΔOI Flow) ותרשים תנועות הכסף המוסדי.")
+
+        # TAB C: Empirical Playbook & Strategic Takeaways
+        with tab_playbook:
+            st.markdown("##### 📋 מטריצת ממצאי מחקר וכללי מסחר אמפיריים (Quantitative Playbook)")
+            st.dataframe(pd.DataFrame(pc_research.empirical_table), hide_index=True, use_container_width=True)
+
+            st.markdown("##### 💡 תמצית מנהלים והנחיות לטריידר")
+            for t in pc_research.strategic_takeaways:
+                st.markdown(f"• {t}")
+
 # -----------------------------------------------------------------------------
 # TAB 5: DATA & HEALTH — עדכון נתונים ובריאות המערכת (EOD Only)
 # -----------------------------------------------------------------------------
